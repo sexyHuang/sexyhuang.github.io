@@ -217,11 +217,22 @@
             </section>
         </div>
 
-        <!-- Saved Records List -->
+        <!-- Saved Records List with Export/Import -->
         <section class="mt-12 mb-20">
-            <div class="flex justify-between items-end mb-6 border-b border-stone-200 pb-2">
-                <h2 class="text-2xl font-bold text-stone-800">📋 历史评价记录</h2>
-                <span id="recordCount" class="text-stone-500 text-sm font-medium">共 0 套</span>
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-stone-200 pb-2 gap-4">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-2xl font-bold text-stone-800">📋 历史评价记录</h2>
+                    <span id="recordCount" class="text-stone-500 text-sm font-medium bg-stone-100 px-2 py-0.5 rounded-full">共 0 套</span>
+                </div>
+                <div class="flex gap-2">
+                    <input type="file" id="importInput" accept=".json" class="hidden">
+                    <button id="importBtn" class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
+                        <span>📥</span> 导入配置与数据
+                    </button>
+                    <button id="exportBtn" class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
+                        <span>📤</span> 导出备份
+                    </button>
+                </div>
             </div>
             
             <div id="recordsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -394,6 +405,11 @@
 
             // Setup Requirement Modals
             setupRequirementManagement();
+
+            // Setup Data Import/Export
+            document.getElementById('exportBtn').addEventListener('click', exportData);
+            document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importInput').click());
+            document.getElementById('importInput').addEventListener('change', importData);
 
             // Initial render
             renderRequirements();
@@ -724,6 +740,69 @@
         // Save to localStorage
         function saveData() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+        }
+
+        // Data Export
+        function exportData() {
+            const backup = {
+                records: records,
+                requirements: requirements
+            };
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const dateStr = new Date().toISOString().slice(0, 10);
+            a.download = `house_tracker_backup_${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("💾 数据已成功导出！", "bg-emerald-600");
+        }
+
+        // Data Import
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    
+                    if (Array.isArray(parsed)) {
+                        // 支持旧版本格式 (只包含records数组)
+                        records = parsed;
+                    } else if (parsed.records) {
+                        // 新版本格式 (包含records和requirements对象)
+                        records = parsed.records;
+                        if (parsed.requirements && Array.isArray(parsed.requirements)) {
+                            requirements = parsed.requirements;
+                            saveRequirements();
+                        }
+                    } else {
+                        throw new Error("格式无法识别");
+                    }
+                    
+                    saveData();
+                    
+                    // Trigger UI updates
+                    renderRequirements();
+                    renderManageTable();
+                    renderRecords();
+                    updateDashboard();
+                    
+                    showToast("📥 数据导入成功！", "bg-emerald-600");
+                } catch (error) {
+                    console.error("Import error:", error);
+                    showToast("⚠️ 导入失败，请检查 JSON 文件格式", "bg-red-600");
+                }
+                
+                // Clear the input value so the same file can be imported again if needed
+                event.target.value = '';
+            };
+            reader.readAsText(file);
         }
 
         // Render Record Cards
