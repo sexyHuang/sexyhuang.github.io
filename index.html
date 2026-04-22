@@ -7,20 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Sand & Sage (背景: #fdfbf7, 主色: #5f6f52, 辅色: #a98467) -->
-    <!-- Application Structure Plan: 
-        1. 顶层信息层：展示需求定义与优先级表格，通过 <details> 实现默认折叠。
-        2. 核心录入层：重构为全维度三态评估系统，实时量化计算。
-        3. 评分计算层：JS内置 50分基准 + 房租波动计算 + 通勤波动 + 维度权重矩阵 + 附加分。
-        4. 数据管理层：利用 localStorage 实现本地记录增删改查。保证旧数据字段不被破坏。
-        5. 可视化分析层：通过 Chart.js 展示横向对比（价格与量化得分）。
-    -->
-    <!-- Visualization & Content Choices: 
-        - 使用 Chart.js 的柱状图对比总分和租金。
-        - 维度评价采用 Tailwind 的 Segmented Control（分段控制器）实现三态单选，适配移动端。
-        - 实时分数展示置于表单醒目位置。
-        - 确认：无 SVG 图标，全部使用 Unicode 字符。
-    -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
         body {
@@ -220,13 +206,22 @@
             </section>
         </div>
 
-        <!-- Saved Records List with Export/Import -->
+        <!-- Saved Records List with Export/Import & Sort -->
         <section class="mt-12 mb-20">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-stone-200 pb-2 gap-4">
-                <div class="flex items-center gap-3">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-stone-200 pb-4 gap-4">
+                <div class="flex flex-wrap items-center gap-3">
                     <h2 class="text-2xl font-bold text-stone-800">📋 历史评价记录</h2>
                     <span id="recordCount" class="text-stone-500 text-sm font-medium bg-stone-100 px-2 py-0.5 rounded-full">共 0 套</span>
+                    
+                    <div class="ml-2 flex items-center gap-2 bg-white border border-stone-200 rounded-lg px-2 shadow-sm">
+                        <span class="text-xs text-stone-400">排序:</span>
+                        <select id="sortRecordsSelect" class="text-sm border-none bg-transparent outline-none py-1.5 text-stone-700 cursor-pointer font-medium">
+                            <option value="scoreDesc" selected>按量化评分倒序</option>
+                            <option value="timeDesc">按录入时间倒序</option>
+                        </select>
+                    </div>
                 </div>
+                
                 <div class="flex gap-2">
                     <input type="file" id="importInput" accept=".json" class="hidden">
                     <button id="importBtn" class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
@@ -247,10 +242,24 @@
         </section>
     </div>
 
+    <!-- Record Details Modal -->
+    <div id="recordDetailsModal" class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] flex flex-col" id="recordDetailsContent">
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-stone-100 pb-4">
+                <h3 class="text-xl font-bold text-stone-800 flex items-center gap-2">
+                    <span>📄</span> 评价详情与算分明细
+                </h3>
+                <button id="closeDetailsBtn" class="text-stone-400 hover:text-stone-600 text-2xl font-bold leading-none">&times;</button>
+            </div>
+            <div id="recordDetailsBody" class="overflow-y-auto custom-scrollbar flex-grow pr-2 space-y-5">
+                <!-- Content injected by JS -->
+            </div>
+        </div>
+    </div>
+
     <!-- Manage Requirements Modal -->
     <div id="reqModal" class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
         <div class="bg-white rounded-2xl p-6 max-w-3xl w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] flex flex-col" id="reqModalContent">
-            <!-- Modal Content (handles requirement adding/editing) -->
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <h3 class="text-xl font-bold text-stone-800">⚙️ 管理需求维度</h3>
                 <button id="closeReqModalBtn" class="text-stone-400 hover:text-stone-600 text-2xl font-bold leading-none">&times;</button>
@@ -338,6 +347,7 @@
         const REQ_STORAGE_KEY = 'rental_assistant_requirements';
         let records = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
         let editingRecordId = null;
+        let currentSortMode = 'scoreDesc'; // default sort
 
         // --- Quantification Rules ---
         const BASE_SCORE = 50;
@@ -394,6 +404,18 @@
 
             form.addEventListener('submit', handleFormSubmit);
             document.getElementById('cancelRecordEditBtn').addEventListener('click', cancelRecordEdit);
+
+            // Sorting Listener
+            document.getElementById('sortRecordsSelect').addEventListener('change', (e) => {
+                currentSortMode = e.target.value;
+                renderRecords();
+            });
+
+            // Details Modal Listener
+            document.getElementById('closeDetailsBtn').addEventListener('click', () => {
+                document.getElementById('recordDetailsModal').classList.add('opacity-0', 'pointer-events-none');
+                document.getElementById('recordDetailsContent').classList.add('scale-95');
+            });
 
             // Import / Export
             document.getElementById('exportBtn').addEventListener('click', exportData);
@@ -585,7 +607,6 @@
             updateDashboard();
         }
 
-        // 保存数据到 localStorage
         function saveData() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
         }
@@ -601,19 +622,16 @@
             document.getElementById('price').value = rec.price;
             document.getElementById('notes').value = rec.notes || '';
             
-            // New fields binding
             document.getElementById('commuteType').value = rec.commuteType || 'normal';
             
             bonusScoreSlider.value = rec.bonusScore || 0;
             bonusScoreDisplay.innerText = rec.bonusScore || 0;
 
-            // Load evaluations or upgrade old records on the fly
             requirements.forEach(req => {
                 let valToSet = 'meet';
                 if (rec.evaluations && rec.evaluations[req.id]) {
                     valToSet = rec.evaluations[req.id];
                 } else {
-                    // Legacy migration logic on edit
                     if (req.prio === 'P0' && rec.missingP0 && rec.missingP0.includes(req.dim)) {
                         valToSet = 'fail';
                     }
@@ -639,7 +657,6 @@
             bonusScoreSlider.value = 0;
             bonusScoreDisplay.innerText = "0";
             
-            // Reset radios to default 'meet'
             document.querySelectorAll('input.eval-radio[value="meet"]').forEach(r => r.checked = true);
 
             const titleEl = document.getElementById('recordFormTitle');
@@ -651,7 +668,115 @@
             calculateLiveScore();
         }
 
-        // Render Cards (Handles old and new formats)
+        // Record Details Modal logic
+        window.showRecordDetails = (id) => {
+            const rec = records.find(r => r.id === id);
+            if (!rec) return;
+
+            const isFailed = rec.hasP0Fail !== undefined ? rec.hasP0Fail : !rec.allP0Met;
+            const displayScore = rec.totalScore !== undefined ? rec.totalScore : (rec.score * 10);
+            
+            let commuteDisplay = rec.commute ? `${rec.commute}分钟` : '一般';
+            let commutePoints = 0;
+            if (rec.commuteType === 'convenient') { commuteDisplay = '便利'; commutePoints = 10; }
+            else if (rec.commuteType === 'normal') { commuteDisplay = '一般'; commutePoints = 0; }
+            else if (rec.commuteType === 'inconvenient') { commuteDisplay = '不便'; commutePoints = -10; }
+
+            const rentPoints = Math.floor((RENT_BASE - rec.price) / 50);
+            
+            // Build the modal content
+            let html = `
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h4 class="text-2xl font-bold text-stone-800">${rec.name}</h4>
+                        <p class="text-xs text-stone-500 mt-1">录入时间: ${rec.date}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-[10px] text-stone-500 uppercase tracking-widest">量化总分</p>
+                        <p class="text-3xl font-mono font-bold ${isFailed ? 'text-red-500' : 'text-[#5f6f52]'}">${displayScore}</p>
+                    </div>
+                </div>
+
+                <div class="bg-stone-50 p-4 rounded-xl border border-stone-200">
+                    <h5 class="font-bold text-sm text-stone-700 mb-3 flex items-center gap-2"><span>🧮</span> 算分明细构成</h5>
+                    <div class="space-y-2 text-sm text-stone-600">
+                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
+                            <span>初始基准分</span><span class="font-medium">+50</span>
+                        </div>
+                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
+                            <span>租金分 (¥${rec.price})</span>
+                            <span class="font-medium ${rentPoints > 0 ? 'text-emerald-600' : (rentPoints < 0 ? 'text-red-500' : '')}">${rentPoints > 0 ? '+' : ''}${rentPoints}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
+                            <span>通勤便利度 (${commuteDisplay})</span>
+                            <span class="font-medium ${commutePoints > 0 ? 'text-emerald-600' : (commutePoints < 0 ? 'text-red-500' : '')}">${commutePoints > 0 ? '+' : ''}${commutePoints}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
+                            <span>主观附加分</span>
+                            <span class="font-medium ${rec.bonusScore > 0 ? 'text-emerald-600' : (rec.bonusScore < 0 ? 'text-red-500' : '')}">${rec.bonusScore > 0 ? '+' : ''}${rec.bonusScore || 0}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h5 class="font-bold text-sm text-stone-700 mb-3 flex items-center gap-2"><span>📋</span> 维度核算详情</h5>
+                    <div class="space-y-2">
+            `;
+
+            let evalScoreTotal = 0;
+            requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]).forEach(req => {
+                let evalVal = 'meet'; // legacy default fallback
+                if (rec.evaluations && rec.evaluations[req.id]) {
+                    evalVal = rec.evaluations[req.id];
+                } else if (req.prio === 'P0' && rec.missingP0 && rec.missingP0.includes(req.dim)) {
+                    evalVal = 'fail';
+                }
+                
+                let points = 0;
+                if (PRIO_RULES[req.prio]) points = PRIO_RULES[req.prio][evalVal];
+                evalScoreTotal += points;
+
+                let tagClass = "bg-emerald-100 text-emerald-700";
+                let tagText = "符合";
+                let ptColor = "text-stone-600";
+                if (evalVal === 'fail') { tagClass = "bg-red-100 text-red-700"; tagText = "不符合"; ptColor = "text-red-500"; }
+                else if (evalVal === 'exceed') { tagClass = "bg-amber-100 text-amber-700"; tagText = "超预期"; ptColor = "text-emerald-600"; }
+
+                html += `
+                    <div class="flex items-center justify-between py-1.5 border-b border-stone-100 last:border-0 text-sm">
+                        <div class="flex items-center gap-2 flex-grow min-w-0 pr-2">
+                            <span class="text-[10px] font-bold text-stone-400 shrink-0 w-5">${req.prio}</span>
+                            <span class="text-stone-700 truncate">${req.dim}</span>
+                        </div>
+                        <div class="flex items-center gap-3 shrink-0">
+                            <span class="text-xs px-1.5 py-0.5 rounded font-medium ${tagClass}">${tagText}</span>
+                            <span class="font-medium text-xs w-6 text-right ${ptColor}">${points > 0 ? '+'+points : points}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                    <div class="text-right text-xs text-stone-500 mt-2 font-medium">维度核算总计: ${evalScoreTotal > 0 ? '+' : ''}${evalScoreTotal} 分</div>
+                </div>
+            `;
+
+            if (rec.notes) {
+                html += `
+                <div>
+                    <h5 class="font-bold text-sm text-stone-700 mb-2 flex items-center gap-2"><span>📝</span> 备注说明</h5>
+                    <p class="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100 leading-relaxed">${rec.notes}</p>
+                </div>
+                `;
+            }
+
+            document.getElementById('recordDetailsBody').innerHTML = html;
+            document.getElementById('recordDetailsModal').classList.remove('opacity-0', 'pointer-events-none');
+            document.getElementById('recordDetailsContent').classList.remove('scale-95');
+        };
+
+        // Render Cards
         function renderRecords() {
             const list = document.getElementById('recordsList');
             const emptyState = document.getElementById('emptyRecords');
@@ -663,7 +788,19 @@
             }
             emptyState.classList.add('hidden');
 
-            [...records].sort((a, b) => b.id - a.id).forEach(rec => {
+            // Apply Sorting
+            let displayRecords = [...records];
+            if (currentSortMode === 'scoreDesc') {
+                displayRecords.sort((a, b) => {
+                    const scoreA = a.totalScore !== undefined ? a.totalScore : (a.score * 10);
+                    const scoreB = b.totalScore !== undefined ? b.totalScore : (b.score * 10);
+                    return scoreB - scoreA;
+                });
+            } else {
+                displayRecords.sort((a, b) => b.id - a.id); // Time desc
+            }
+
+            displayRecords.forEach(rec => {
                 const card = document.createElement('div');
                 const isFailed = rec.hasP0Fail !== undefined ? rec.hasP0Fail : !rec.allP0Met;
                 const borderClass = !isFailed ? 'border-emerald-200 shadow-sm' : 'border-red-200 bg-[#fffcfc] opacity-80';
@@ -672,9 +809,8 @@
                     ? `<span class="inline-block text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold border border-emerald-200">✅ P0 合格</span>` 
                     : `<span class="inline-block text-[10px] px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold border border-red-200">❌ 触碰底线淘汰</span>`;
 
-                const displayScore = rec.totalScore !== undefined ? rec.totalScore : (rec.score * 10); // Pseudo scale old score for display
+                const displayScore = rec.totalScore !== undefined ? rec.totalScore : (rec.score * 10);
 
-                // Backwards compatible display mapping for commute
                 let commuteDisplay = rec.commute ? `${rec.commute}分钟` : '一般';
                 if (rec.commuteType === 'convenient') commuteDisplay = '便利';
                 else if (rec.commuteType === 'normal') commuteDisplay = '一般';
@@ -688,6 +824,7 @@
                             <p class="text-[10px] text-stone-400 mt-1">${rec.date}</p>
                         </div>
                         <div class="flex gap-1 shrink-0">
+                            <button onclick="showRecordDetails(${rec.id})" class="text-stone-300 hover:text-emerald-500 transition-colors p-1" title="查看明细"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg></button>
                             <button onclick="editRecord(${rec.id})" class="text-stone-300 hover:text-blue-500 transition-colors p-1" title="修改"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg></button>
                             <button onclick="deleteRecord(${rec.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
                         </div>
@@ -911,11 +1048,27 @@
             reader.readAsText(file);
         }
 
+        let toastTimeout;
         function showToast(msg, bg) {
             const t = document.getElementById('toast');
-            t.innerText = msg; t.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 z-50 ${bg}`;
-            setTimeout(() => { t.classList.replace('translate-y-20', 'translate-y-0'); t.classList.replace('opacity-0', 'opacity-100'); }, 10);
-            setTimeout(() => { t.classList.replace('translate-y-0', 'translate-y-20'); t.classList.replace('opacity-100', 'opacity-0'); }, 3000);
+            t.innerText = msg; 
+            // 每次调用时，先重置为包含隐藏状态的初始类名
+            t.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 z-50 translate-y-20 opacity-0 ${bg}`;
+            
+            // 清除之前的定时器，防止连续点击时动画错乱
+            if (toastTimeout) clearTimeout(toastTimeout);
+            
+            // 触发进入动画
+            setTimeout(() => { 
+                t.classList.replace('translate-y-20', 'translate-y-0'); 
+                t.classList.replace('opacity-0', 'opacity-100'); 
+            }, 10);
+            
+            // 3秒后触发退出动画
+            toastTimeout = setTimeout(() => { 
+                t.classList.replace('translate-y-0', 'translate-y-20'); 
+                t.classList.replace('opacity-100', 'opacity-0'); 
+            }, 3000);
         }
 
         document.addEventListener('DOMContentLoaded', init);
