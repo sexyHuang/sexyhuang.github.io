@@ -178,14 +178,14 @@
 
     <!-- Form Modal: Entry & Editing -->
     <div id="recordFormModal" class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300 p-2 sm:p-4">
-        <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl transform scale-95 transition-transform duration-300 max-h-[98vh] flex flex-col relative" id="recordFormContent">
+        <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl transform scale-95 transition-transform duration-300 max-h-[85vh] flex flex-col relative" id="recordFormContent">
             
             <!-- Modal Header -->
             <div class="flex justify-between items-center p-5 sm:p-6 border-b border-stone-100 shrink-0">
-                <h2 id="recordFormTitle" class="text-xl font-bold flex items-center gap-2 transition-colors text-stone-800">
-                    <span>✍️</span> 新录入量化评估
+                <h2 id="recordFormTitle" class="text-xl font-bold flex items-center gap-2 transition-colors text-stone-800 truncate pr-2">
+                    <span>✍️</span> <span class="truncate">新录入量化评估</span>
                 </h2>
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-4 shrink-0">
                     <div class="bg-[#5f6f52] text-white px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2">
                         <span class="text-xs opacity-80 hidden sm:inline">实时总分</span>
                         <span class="text-xs opacity-80 sm:hidden">分</span>
@@ -248,7 +248,7 @@
                 </div>
 
                 <!-- Modal Footer Buttons -->
-                <div class="p-5 sm:p-6 border-t border-stone-100 shrink-0 bg-stone-50/50 rounded-b-2xl flex gap-3">
+                <div class="p-5 pb-8 sm:p-6 border-t border-stone-100 shrink-0 bg-stone-50/50 rounded-b-2xl flex gap-3">
                     <button type="button" id="cancelRecordFormBtn" class="flex-1 bg-white border border-stone-200 hover:bg-stone-100 text-stone-700 font-bold py-3.5 rounded-xl shadow-sm transition-all transform active:scale-[0.98]">
                         取消
                     </button>
@@ -426,6 +426,7 @@
 
             // Form Submit and Modals Actions
             form.addEventListener('submit', handleFormSubmit);
+            document.getElementById('name').addEventListener('input', updateModalTitle);
             document.getElementById('openNewRecordBtn').addEventListener('click', () => {
                 cancelRecordEdit(); // resets form and state
                 openRecordModal();
@@ -458,9 +459,24 @@
         }
 
         // --- Modal Handlers ---
+        function updateModalTitle() {
+            const nameInputVal = document.getElementById('name').value.trim();
+            const titleEl = document.getElementById('recordFormTitle');
+            const icon = editingRecordId ? '✏️' : '✍️';
+            const defaultText = editingRecordId ? '编辑量化评估记录' : '新录入量化评估';
+            
+            titleEl.innerHTML = `<span>${icon}</span> <span class="truncate">${nameInputVal ? nameInputVal : defaultText}</span>`;
+            if (editingRecordId) {
+                titleEl.classList.add('text-blue-600');
+            } else {
+                titleEl.classList.remove('text-blue-600');
+            }
+        }
+
         function openRecordModal() {
             recordModal.classList.remove('opacity-0', 'pointer-events-none');
             recordModalContent.classList.remove('scale-95');
+            updateModalTitle();
             calculateLiveScore(); // Force recalculate upon opening
         }
 
@@ -679,12 +695,9 @@
                 if (radio) radio.checked = true;
             });
 
-            const titleEl = document.getElementById('recordFormTitle');
-            titleEl.innerHTML = '<span>✏️</span> 编辑量化评估记录';
-            titleEl.classList.add('text-blue-600');
             document.getElementById('submitRecordBtn').innerHTML = '💾 确认修改';
 
-            openRecordModal();
+            openRecordModal(); // This calls updateModalTitle automatically
         };
 
         function cancelRecordEdit() {
@@ -696,11 +709,9 @@
             
             document.querySelectorAll('input.eval-radio[value="meet"]').forEach(r => r.checked = true);
 
-            const titleEl = document.getElementById('recordFormTitle');
-            titleEl.innerHTML = '<span>✍️</span> 新录入量化评估';
-            titleEl.classList.remove('text-blue-600');
             document.getElementById('submitRecordBtn').innerHTML = '💾 确认保存记录';
             
+            updateModalTitle();
             calculateLiveScore();
         }
 
