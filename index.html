@@ -132,7 +132,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <!-- Entry Card -->
             <section class="bg-white p-6 rounded-2xl shadow-md border border-stone-100 h-full flex flex-col">
-                <h2 class="text-xl font-bold mb-6 flex items-center gap-2">
+                <h2 id="recordFormTitle" class="text-xl font-bold mb-6 flex items-center gap-2 transition-colors">
                     <span>✍️</span> 新录入房源卡片
                 </h2>
                 <form id="houseForm" class="space-y-6 flex-grow flex flex-col">
@@ -176,9 +176,14 @@
                         </label>
                     </div>
 
-                    <button type="submit" class="w-full bg-[#5f6f52] hover:bg-[#4a5741] text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98] mt-4">
-                        💾 保存评价记录
-                    </button>
+                    <div class="flex gap-3 mt-4">
+                        <button type="button" id="cancelRecordEditBtn" class="hidden flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-4 rounded-xl shadow-sm transition-all transform active:scale-[0.98]">
+                            取消修改
+                        </button>
+                        <button type="submit" id="submitRecordBtn" class="flex-[2] bg-[#5f6f52] hover:bg-[#4a5741] text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98]">
+                            💾 保存评价记录
+                        </button>
+                    </div>
                 </form>
             </section>
 
@@ -336,7 +341,10 @@
         const REQ_STORAGE_KEY = 'rental_assistant_requirements';
         let records = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
         
-        // Default Requirements Configuration (Updated exactly based on user image)
+        // Global state for editing a record
+        let editingRecordId = null;
+
+        // Default Requirements Configuration
         const defaultRequirements = [
             { id: 1, prio: "P0", dim: "🏠 房屋类型", req: "80m²+大2房/3房，光照正常" },
             { id: 2, prio: "P0", dim: "🚽 卫浴条件", req: "独立卫生间，最好干湿分离，水压正常，无漏水反味" },
@@ -380,8 +388,9 @@
                 scoreDisplay.innerText = e.target.value;
             });
 
-            // Handle form submission
+            // Handle form submission and cancellation
             form.addEventListener('submit', handleFormSubmit);
+            document.getElementById('cancelRecordEditBtn').addEventListener('click', cancelRecordEdit);
 
             // Setup Requirement Modals
             setupRequirementManagement();
@@ -616,7 +625,56 @@
             localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
         }
 
-        // Handle Save
+        // Edit Record Logic
+        window.editRecord = (id) => {
+            const rec = records.find(r => r.id === id);
+            if (!rec) return;
+
+            editingRecordId = id;
+
+            // Populate text inputs and slider
+            document.getElementById('name').value = rec.name;
+            document.getElementById('price').value = rec.price;
+            document.getElementById('commute').value = rec.commute;
+            document.getElementById('score').value = rec.score;
+            document.getElementById('notes').value = rec.notes || '';
+            document.getElementById('scoreDisplay').innerText = rec.score;
+
+            // Populate P0 checkboxes accurately based on saved missingP0 array
+            const p0Checks = document.querySelectorAll('.p0-check');
+            p0Checks.forEach(checkbox => {
+                const isMissing = rec.missingP0 && rec.missingP0.includes(checkbox.dataset.label);
+                checkbox.checked = !isMissing;
+            });
+
+            // Adjust UI for editing state
+            const titleEl = document.getElementById('recordFormTitle');
+            titleEl.innerHTML = '<span>✏️</span> 编辑房源评价记录';
+            titleEl.classList.add('text-blue-600');
+            
+            document.getElementById('submitRecordBtn').innerHTML = '💾 保存修改';
+            document.getElementById('cancelRecordEditBtn').classList.remove('hidden');
+
+            // Scroll up to the form smoothly
+            titleEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
+        // Cancel Edit Logic
+        function cancelRecordEdit() {
+            editingRecordId = null;
+            form.reset();
+            document.getElementById('scoreDisplay').innerText = "5";
+            
+            // Revert UI to default add state
+            const titleEl = document.getElementById('recordFormTitle');
+            titleEl.innerHTML = '<span>✍️</span> 新录入房源卡片';
+            titleEl.classList.remove('text-blue-600');
+            
+            document.getElementById('submitRecordBtn').innerHTML = '💾 保存评价记录';
+            document.getElementById('cancelRecordEditBtn').classList.add('hidden');
+        }
+
+        // Handle Form Save (Add or Update)
         function handleFormSubmit(e) {
             e.preventDefault();
             
@@ -631,35 +689,36 @@
 
             const allP0Met = missingP0.length === 0;
 
-            const newRecord = {
-                id: Date.now(),
+            const recordData = {
                 name: document.getElementById('name').value.trim(),
                 price: parseInt(document.getElementById('price').value, 10),
                 commute: parseInt(document.getElementById('commute').value, 10),
                 score: parseInt(document.getElementById('score').value, 10),
                 allP0Met: allP0Met,
                 missingP0: missingP0,
-                notes: document.getElementById('notes').value.trim(),
-                date: new Date().toLocaleDateString()
+                notes: document.getElementById('notes').value.trim()
             };
 
-            records.push(newRecord);
+            if (editingRecordId) {
+                // Update existing record
+                const index = records.findIndex(r => r.id === editingRecordId);
+                if (index > -1) {
+                    // Keep the original id and original date
+                    records[index] = { ...records[index], ...recordData };
+                }
+                showToast(allP0Met ? "✅ 评价记录修改成功！" : "⚠️ 修改已保存，因不满足 P0 刚需已被标记为不合格。", allP0Met ? "bg-emerald-600" : "bg-amber-600");
+            } else {
+                // Create new record
+                recordData.id = Date.now();
+                recordData.date = new Date().toLocaleDateString();
+                records.push(recordData);
+                showToast(allP0Met ? "✅ 房源保存成功！加入候选列表。" : "⚠️ 房源已保存。由于不满足 P0 刚需，已被标记为不合格。", allP0Met ? "bg-emerald-600" : "bg-amber-600");
+            }
+
             saveData();
-            
-            // Reset form
-            form.reset();
-            scoreDisplay.innerText = "5";
-            
-            // Update UI
+            cancelRecordEdit(); // resets form, clears editingRecordId, and fixes UI
             renderRecords();
             updateDashboard();
-            
-            // Show Feedback
-            if (allP0Met) {
-                showToast("✅ 房源保存成功！加入候选列表。", "bg-emerald-600");
-            } else {
-                showToast("⚠️ 房源已保存。由于不满足 P0 刚需，已被标记为不合格。", "bg-amber-600");
-            }
         }
 
         // Save to localStorage
@@ -716,9 +775,14 @@
                             <h3 class="font-bold text-lg text-stone-800 leading-tight">${rec.name}</h3>
                             <p class="text-[10px] text-stone-400 mt-1">${rec.date}</p>
                         </div>
-                        <button onclick="deleteRecord(${rec.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除记录">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                        </button>
+                        <div class="flex gap-1">
+                            <button onclick="editRecord(${rec.id})" class="text-stone-300 hover:text-blue-500 transition-colors p-1" title="修改记录">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
+                            </button>
+                            <button onclick="deleteRecord(${rec.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除记录">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                            </button>
+                        </div>
                     </div>
                     
                     ${p0StatusHtml}
@@ -775,6 +839,11 @@
                 updateDashboard();
                 showToast("🗑️ 记录已删除", "bg-stone-700");
                 
+                // If the user deleted the record they are currently editing, reset the edit form
+                if (editingRecordId === recordToDeleteId) {
+                    cancelRecordEdit();
+                }
+
                 // Close modal
                 const modal = document.getElementById('deleteModal');
                 const content = document.getElementById('deleteModalContent');
@@ -841,7 +910,7 @@
                 
                 // Conclusion
                 if (bestScoreProp.id === cheapestProp.id && bestScoreProp.price <= maxBudget) {
-                    html += `<li class=-3 text-emerald-400 font-bold">🎯 终极建议: 「${bestScoreProp.name}」兼顾了最佳体验与最优价格，建议优先签约！</li>`;
+                    html += `<li class="mt-3 text-emerald-400 font-bold">🎯 终极建议: 「${bestScoreProp.name}」兼顾了最佳体验与最优价格，建议优先签约！</li>`;
                 } else if (bestScoreProp.price <= maxBudget) {
                     html += `<li class="mt-3 text-emerald-200">💡 权衡建议: 如果愿意为好体验买单，「${bestScoreProp.name}」在预算上限内值得考虑；若更看重省钱，选「${cheapestProp.name}」。</li>`;
                 }
