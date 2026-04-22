@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,25 +9,28 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chosen Palette: Warm Sand & Sage (背景: #fdfbf7, 主色: #5f6f52, 辅色: #a98467) -->
     <!-- Application Structure Plan: 
-        1. 顶层信息层（收起状态）：展示需求定义与优先级表格，通过 <details> 实现默认折叠。
-        2. 核心录入层：房源对比卡的交互表单，包含 P0 强制勾选逻辑、租金验证。
-        3. 数据管理层：利用 localStorage 实现本地记录的增删改查。
-        4. 可视化分析层：通过 Chart.js 展示已存房源的横向对比（价格与主观得分），辅助最终决策。
+        1. 顶层信息层：展示需求定义与优先级表格，通过 <details> 实现默认折叠。
+        2. 核心录入层：重构为全维度三态评估系统，实时量化计算。
+        3. 评分计算层：JS内置 50分基准 + 房租波动计算 + 通勤波动 + 维度权重矩阵 + 附加分。
+        4. 数据管理层：利用 localStorage 实现本地记录增删改查。保证旧数据字段不被破坏。
+        5. 可视化分析层：通过 Chart.js 展示横向对比（价格与量化得分）。
     -->
     <!-- Visualization & Content Choices: 
-        - 使用 Chart.js 的雷达图或柱状图进行多维度对比。
-        - P0 需求采用强制 Checkbox 逻辑，未勾选即判定为“不合格”。
-        - 主观评分采用 Slider，提供直观的数值反馈。
+        - 使用 Chart.js 的柱状图对比总分和租金。
+        - 维度评价采用 Tailwind 的 Segmented Control（分段控制器）实现三态单选，适配移动端。
+        - 实时分数展示置于表单醒目位置。
         - 确认：无 SVG 图标，全部使用 Unicode 字符。
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
         body {
             font-family: 'Noto Sans SC', sans-serif;
             background-color: #fdfbf7;
             color: #433d3c;
         }
+
         .chart-container {
             position: relative;
             width: 100%;
@@ -35,82 +39,106 @@
             height: 300px;
             max-height: 400px;
         }
-        details > summary {
+
+        details>summary {
             list-style: none;
             cursor: pointer;
         }
-        details > summary::-webkit-details-marker {
+
+        details>summary::-webkit-details-marker {
             display: none;
         }
+
         input[type="range"] {
             accent-color: #5f6f52;
         }
-        .p0-tag { background-color: #5f6f52; color: white; }
-        .p1-tag { background-color: #a98467; color: white; }
-        .p2-tag { background-color: #adc178; color: white; }
-        .p3-tag { background-color: #dde5b6; color: #433d3c; }
-        
-        /* Custom scrollbar for table container */
-        .table-container::-webkit-scrollbar {
+
+        .p0-tag {
+            background-color: #5f6f52;
+            color: white;
+        }
+
+        .p1-tag {
+            background-color: #a98467;
+            color: white;
+        }
+
+        .p2-tag {
+            background-color: #adc178;
+            color: white;
+        }
+
+        .p3-tag {
+            background-color: #dde5b6;
+            color: #433d3c;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
             height: 8px;
+            width: 6px;
         }
-        .table-container::-webkit-scrollbar-track {
-            background: #f1f1f1; 
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
             border-radius: 4px;
         }
-        .table-container::-webkit-scrollbar-thumb {
-            background: #d6d3d1; 
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d6d3d1;
             border-radius: 4px;
         }
-        .table-container::-webkit-scrollbar-thumb:hover {
-            background: #a8a29e; 
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a29e;
         }
     </style>
 </head>
+
 <body class="p-4 md:p-8">
 
     <div class="max-w-5xl mx-auto">
         <!-- Header -->
         <header class="text-center mb-10">
             <h1 class="text-3xl md:text-4xl font-bold text-stone-800 mb-2">🏠 房源看房对比助手</h1>
-            <p class="text-stone-500">科学记录每一套房源，做出不后悔的换租决策</p>
+            <p class="text-stone-500">全新量化评估引擎：客观打分，科学决策</p>
         </header>
 
         <!-- Supplemental Info (Collapsible) -->
         <section class="mb-8">
             <details class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden group">
-                <summary class="p-4 bg-stone-100 flex justify-between items-center hover:bg-stone-200 transition-colors">
-                    <span class="font-bold text-stone-700">📌 查看我的需求清单与优先级定义</span>
+                <summary
+                    class="p-4 bg-stone-100 flex justify-between items-center hover:bg-stone-200 transition-colors">
+                    <span class="font-bold text-stone-700">📌 查看需求清单与量化规则</span>
                     <span class="text-stone-400 group-open:hidden">点击展开 ▾</span>
                     <span class="text-stone-400 hidden group-open:inline">点击收起 ▴</span>
                 </summary>
                 <div class="p-6 space-y-6">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div class="p-3 rounded-lg bg-stone-50 border border-stone-200">
-                            <span class="p0-tag text-xs px-2 py-0.5 rounded font-bold">P0</span>
-                            <p class="text-xs mt-2 text-stone-500 italic">绝对刚需，不满足直接淘汰</p>
-                        </div>
-                        <div class="p-3 rounded-lg bg-stone-50 border border-stone-200">
-                            <span class="p1-tag text-xs px-2 py-0.5 rounded font-bold">P1</span>
-                            <p class="text-xs mt-2 text-stone-500 italic">核心期望，尽量满足</p>
-                        </div>
-                        <div class="p-3 rounded-lg bg-stone-50 border border-stone-200">
-                            <span class="p2-tag text-xs px-2 py-0.5 rounded font-bold">P2</span>
-                            <p class="text-xs mt-2 text-stone-500 italic">锦上添花，增加幸福感</p>
-                        </div>
-                        <div class="p-3 rounded-lg bg-stone-50 border border-stone-200">
-                            <span class="p3-tag text-xs px-2 py-0.5 rounded font-bold">P3</span>
-                            <p class="text-xs mt-2 text-stone-500 italic">边缘需求，随缘加分</p>
+                    <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4 text-sm text-stone-700">
+                        <h4 class="font-bold text-amber-800 mb-2">⚖️ 当前量化计分规则</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li><strong>基础分：</strong> 50 分</li>
+                                <li><strong>租金：</strong> 以4600为准，低50元加1分，高50元扣1分</li>
+                                <li><strong>通勤：</strong> 便利(+10分)、一般(0分)、不便(-10分)</li>
+                                <li><strong>附加分：</strong> 主观微调范围 -50 ~ 50分</li>
+                            </ul>
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li><strong>P0:</strong> 不符合(-100分)、符合(0分)、超预期(+10分)</li>
+                                <li><strong>P1:</strong> 不符合(-10分)、符合(+2分)、超预期(+10分)</li>
+                                <li><strong>P2:</strong> 不符合(0分)、符合(+1分)、超预期(+5分)</li>
+                                <li><strong>P3:</strong> 不符合(0分)、符合(+0.5分)、超预期(+2分)</li>
+                            </ul>
                         </div>
                     </div>
-                    
+
                     <div class="flex justify-between items-end mb-2">
                         <h3 class="font-bold text-stone-800 text-lg">📋 我的租房需求清单</h3>
-                        <button id="openManageReqBtn" class="text-sm font-medium text-[#5f6f52] hover:text-[#4a5741] bg-[#dde5b6]/30 px-3 py-1 rounded-md transition-colors flex items-center gap-1">
+                        <button id="openManageReqBtn"
+                            class="text-sm font-medium text-[#5f6f52] hover:text-[#4a5741] bg-[#dde5b6]/30 px-3 py-1 rounded-md transition-colors flex items-center gap-1">
                             <span>⚙️</span> 管理维度
                         </button>
                     </div>
-                    <div class="overflow-x-auto table-container border border-stone-200 rounded-lg">
+                    <div class="overflow-x-auto custom-scrollbar border border-stone-200 rounded-lg">
                         <table class="w-full text-sm text-left border-collapse min-w-[600px]">
                             <thead class="bg-stone-100">
                                 <tr class="border-b border-stone-200 text-stone-600">
@@ -129,89 +157,113 @@
         </section>
 
         <!-- Main Form & Evaluation -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <!-- Entry Card -->
-            <section class="bg-white p-6 rounded-2xl shadow-md border border-stone-100 h-full flex flex-col">
-                <h2 id="recordFormTitle" class="text-xl font-bold mb-6 flex items-center gap-2 transition-colors">
-                    <span>✍️</span> 新录入房源卡片
-                </h2>
-                <form id="houseForm" class="space-y-6 flex-grow flex flex-col">
+            <section
+                class="lg:col-span-7 bg-white p-6 rounded-2xl shadow-md border border-stone-100 h-full flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-6 z-10 relative">
+                    <h2 id="recordFormTitle" class="text-xl font-bold flex items-center gap-2 transition-colors">
+                        <span>✍️</span> 新录入量化评估
+                    </h2>
+                    <div class="bg-[#5f6f52] text-white px-4 py-2 rounded-xl shadow-sm flex items-center gap-2">
+                        <span class="text-xs opacity-80">实时总分</span>
+                        <span id="liveScoreDisplay" class="text-2xl font-bold font-mono">50</span>
+                    </div>
+                </div>
+
+                <form id="houseForm" class="space-y-6 flex-grow flex flex-col z-10 relative">
                     <div class="space-y-4">
                         <label class="block">
                             <span class="text-stone-600 text-sm font-bold">房源名称/地点</span>
-                            <input type="text" id="name" required placeholder="例如：天朗明居 A座 1201" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all">
+                            <input type="text" id="name" required placeholder="例如：天朗明居 A座 1201"
+                                class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all">
                         </label>
                         <div class="grid grid-cols-2 gap-4">
                             <label>
                                 <span class="text-stone-600 text-sm font-bold">纯房租 (元/月)</span>
-                                <input type="number" id="price" required placeholder="4600" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
+                                <input type="number" id="price" required placeholder="4600"
+                                    class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
                             </label>
                             <label>
-                                <span class="text-stone-600 text-sm font-bold">通勤时间 (分)</span>
-                                <input type="number" id="commute" required placeholder="15" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
+                                <span class="text-stone-600 text-sm font-bold">通勤便利性</span>
+                                <select id="commuteType"
+                                    class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none focus:ring-sage-500">
+                                    <option value="convenient">🟢 便利 (地铁近/打车易) +10分</option>
+                                    <option value="normal" selected>🟡 一般 (稍远/打车方便) 0分</option>
+                                    <option value="inconvenient">🔴 不便 (远/打车难) -10分</option>
+                                </select>
                             </label>
                         </div>
                     </div>
 
-                    <div class="space-y-3">
-                        <span class="text-stone-600 text-sm font-bold flex items-center gap-1">
-                            <span class="text-emerald-600">🚨</span> P0 刚需核对 (缺一不可)
-                        </span>
-                        <div id="p0CheckboxesContainer" class="grid grid-cols-2 gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-                            <!-- Dynamic P0 checkboxes will be injected here -->
+                    <div class="flex-grow flex flex-col min-h-0 border-t border-stone-100 pt-4">
+                        <div class="flex justify-between items-end mb-3">
+                            <span class="text-stone-600 text-sm font-bold flex items-center gap-1">
+                                <span>📐</span> 全维度状况评估
+                            </span>
+                        </div>
+
+                        <!-- Dynamic Evaluation List Container -->
+                        <div id="evaluationsContainer"
+                            class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3 pb-2 max-h-[350px]">
+                            <!-- Injected by JS -->
                         </div>
                     </div>
 
-                    <div class="space-y-4 flex-grow">
-                        <div>
+                    <div class="space-y-4 pt-4 border-t border-stone-100">
+                        <label class="block">
                             <div class="flex justify-between items-center">
-                                <span class="text-stone-600 text-sm font-bold">P1/P2 体验综合分 (1-10)</span>
-                                <span id="scoreDisplay" class="text-xl font-bold text-sage-700">5</span>
+                                <span class="text-stone-600 text-sm font-bold">主观附加分 (-50 ~ 50)</span>
+                                <span id="bonusScoreDisplay" class="text-lg font-bold text-sage-700">0</span>
                             </div>
-                            <input type="range" id="score" min="1" max="10" value="5" class="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer mt-2">
-                        </div>
+                            <input type="range" id="bonusScore" min="-50" max="50" value="0"
+                                class="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer mt-2">
+                        </label>
                         <label class="block">
                             <span class="text-stone-600 text-sm font-bold">备注内容</span>
-                            <textarea id="notes" rows="3" placeholder="采光、噪音、动线、热水情况、周边配套等亮点或槽点..." class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none resize-none"></textarea>
+                            <textarea id="notes" rows="2" placeholder="填写其他未涵盖的亮点或槽点..."
+                                class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none resize-none"></textarea>
                         </label>
                     </div>
 
-                    <div class="flex gap-3 mt-4">
-                        <button type="button" id="cancelRecordEditBtn" class="hidden flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-4 rounded-xl shadow-sm transition-all transform active:scale-[0.98]">
+                    <div class="flex gap-3 mt-4 shrink-0">
+                        <button type="button" id="cancelRecordEditBtn"
+                            class="hidden flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-4 rounded-xl shadow-sm transition-all transform active:scale-[0.98]">
                             取消修改
                         </button>
-                        <button type="submit" id="submitRecordBtn" class="flex-[2] bg-[#5f6f52] hover:bg-[#4a5741] text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98]">
-                            💾 保存评价记录
+                        <button type="submit" id="submitRecordBtn"
+                            class="flex-[2] bg-[#5f6f52] hover:bg-[#4a5741] text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-[0.98]">
+                            💾 确认保存记录
                         </button>
                     </div>
                 </form>
             </section>
 
             <!-- Analysis Dashboard -->
-            <section class="space-y-6 h-full flex flex-col">
+            <section class="lg:col-span-5 space-y-6 h-full flex flex-col">
                 <div class="bg-white p-6 rounded-2xl shadow-md border border-stone-100 flex-grow flex flex-col">
                     <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                        <span>📊</span> 合格房源横向对比
+                        <span>📊</span> 合格房源量化对比
                     </h2>
-                    
+
                     <div id="noData" class="flex-grow flex flex-col items-center justify-center text-stone-400 py-10">
                         <p class="text-5xl mb-4">☁️</p>
-                        <p class="text-sm px-8 text-center leading-relaxed">暂无对比数据。<br>请在左侧录入满足所有 P0 刚需的“合格房源”后查看对比图表。</p>
+                        <p class="text-sm px-8 text-center leading-relaxed">暂无对比数据。<br>请录入无 P0 否决的房源查看得分图表。</p>
                     </div>
-                    
+
                     <div id="chartSection" class="hidden flex-grow flex flex-col">
                         <div class="chart-container flex-grow flex items-center">
                             <canvas id="houseChart"></canvas>
                         </div>
-                        <p class="text-xs text-center text-stone-400 mt-2">注：图表仅展示 P0 检查全部通过的候选房源</p>
                     </div>
                 </div>
 
-                <div class="bg-stone-800 text-white p-6 rounded-2xl shadow-md relative overflow-hidden">
-                    <div class="absolute right-0 bottom-0 text-7xl opacity-5 transform translate-x-4 translate-y-4">💡</div>
-                    <h3 class="font-bold text-stone-300 uppercase text-xs tracking-widest mb-4">系统决策建议</h3>
+                <div class="bg-stone-800 text-white p-6 rounded-2xl shadow-md relative overflow-hidden shrink-0">
+                    <div class="absolute right-0 bottom-0 text-7xl opacity-5 transform translate-x-4 translate-y-4">💡
+                    </div>
+                    <h3 class="font-bold text-stone-300 uppercase text-xs tracking-widest mb-4">智能决策分析</h3>
                     <div id="decisionBox" class="text-sm text-stone-400 italic leading-relaxed">
-                        录入至少两套“合格”房源后，系统将为您分析性价比与综合体验最优解...
+                        录入至少两套“合格”房源后，系统将为您计算最高量化分...
                     </div>
                 </div>
             </section>
@@ -219,22 +271,26 @@
 
         <!-- Saved Records List with Export/Import -->
         <section class="mt-12 mb-20">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-stone-200 pb-2 gap-4">
+            <div
+                class="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 border-b border-stone-200 pb-2 gap-4">
                 <div class="flex items-center gap-3">
                     <h2 class="text-2xl font-bold text-stone-800">📋 历史评价记录</h2>
-                    <span id="recordCount" class="text-stone-500 text-sm font-medium bg-stone-100 px-2 py-0.5 rounded-full">共 0 套</span>
+                    <span id="recordCount"
+                        class="text-stone-500 text-sm font-medium bg-stone-100 px-2 py-0.5 rounded-full">共 0 套</span>
                 </div>
                 <div class="flex gap-2">
                     <input type="file" id="importInput" accept=".json" class="hidden">
-                    <button id="importBtn" class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
-                        <span>📥</span> 导入配置与数据
+                    <button id="importBtn"
+                        class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
+                        <span>📥</span> 导入
                     </button>
-                    <button id="exportBtn" class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
-                        <span>📤</span> 导出备份
+                    <button id="exportBtn"
+                        class="text-sm font-medium px-4 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-800 transition-colors flex items-center gap-1.5 shadow-sm bg-white">
+                        <span>📤</span> 导出
                     </button>
                 </div>
             </div>
-            
+
             <div id="recordsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <!-- Records will be injected here -->
             </div>
@@ -245,19 +301,25 @@
     </div>
 
     <!-- Manage Requirements Modal -->
-    <div id="reqModal" class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
-        <div class="bg-white rounded-2xl p-6 max-w-3xl w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] flex flex-col" id="reqModalContent">
+    <div id="reqModal"
+        class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white rounded-2xl p-6 max-w-3xl w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300 max-h-[90vh] flex flex-col"
+            id="reqModalContent">
+            <!-- Modal Content (unchanged from previous version, handles requirement adding/editing) -->
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <h3 class="text-xl font-bold text-stone-800">⚙️ 管理需求维度</h3>
-                <button id="closeReqModalBtn" class="text-stone-400 hover:text-stone-600 text-2xl font-bold leading-none">&times;</button>
+                <button id="closeReqModalBtn"
+                    class="text-stone-400 hover:text-stone-600 text-2xl font-bold leading-none">&times;</button>
             </div>
-            
-            <div class="bg-stone-50 p-4 rounded-xl border border-stone-200 mb-4 shrink-0 transition-all duration-300" id="reqFormContainer">
+
+            <div class="bg-stone-50 p-4 rounded-xl border border-stone-200 mb-4 shrink-0 transition-all duration-300"
+                id="reqFormContainer">
                 <h4 class="font-bold text-stone-700 mb-3 text-sm" id="reqFormTitle">新增需求</h4>
                 <div class="flex flex-wrap gap-3 items-end">
                     <div class="w-24">
                         <label class="block text-xs text-stone-500 mb-1">优先级</label>
-                        <select id="newReqPrio" class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500">
+                        <select id="newReqPrio"
+                            class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500">
                             <option value="P0">P0 刚需</option>
                             <option value="P1">P1 期望</option>
                             <option value="P2">P2 加分</option>
@@ -266,7 +328,8 @@
                     </div>
                     <div class="w-20">
                         <label class="block text-xs text-stone-500 mb-1">图标</label>
-                        <select id="newReqIcon" class="w-full rounded-md border border-stone-300 px-1 py-2 text-sm outline-none focus:border-sage-500 text-center">
+                        <select id="newReqIcon"
+                            class="w-full rounded-md border border-stone-300 px-1 py-2 text-sm outline-none focus:border-sage-500 text-center">
                             <option value="📌">📌</option>
                             <option value="🏠">🏠</option>
                             <option value="🚽">🚽</option>
@@ -293,20 +356,27 @@
                     </div>
                     <div class="flex-1 min-w-[120px]">
                         <label class="block text-xs text-stone-500 mb-1">维度名称</label>
-                        <input type="text" id="newReqDimName" class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500" placeholder="例如: 房屋类型">
+                        <input type="text" id="newReqDimName"
+                            class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500"
+                            placeholder="例如: 房屋类型">
                     </div>
                     <div class="flex-[2] min-w-[200px]">
                         <label class="block text-xs text-stone-500 mb-1">具体要求 (限制/期许)</label>
-                        <input type="text" id="newReqDesc" class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500" placeholder="例如: 整租大两房/3房+">
+                        <input type="text" id="newReqDesc"
+                            class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-sage-500"
+                            placeholder="例如: 整租大两房/3房+">
                     </div>
                     <div class="flex gap-2 w-full sm:w-auto mt-1 sm:mt-0">
-                        <button id="cancelEditBtn" class="hidden px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 font-medium rounded-md text-sm transition-colors">取消</button>
-                        <button id="addReqBtn" class="flex-1 sm:flex-none px-6 py-2 bg-[#5f6f52] hover:bg-[#4a5741] text-white font-medium rounded-md text-sm transition-colors">➕ 添加</button>
+                        <button id="cancelEditBtn"
+                            class="hidden px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 font-medium rounded-md text-sm transition-colors">取消</button>
+                        <button id="addReqBtn"
+                            class="flex-1 sm:flex-none px-6 py-2 bg-[#5f6f52] hover:bg-[#4a5741] text-white font-medium rounded-md text-sm transition-colors">➕
+                            添加</button>
                     </div>
                 </div>
             </div>
 
-            <div class="overflow-y-auto flex-grow rounded-lg border border-stone-200 table-container">
+            <div class="overflow-y-auto flex-grow rounded-lg border border-stone-200 custom-scrollbar">
                 <table class="w-full text-sm text-left border-collapse">
                     <thead class="bg-stone-100 sticky top-0 z-10">
                         <tr class="border-b border-stone-200 text-stone-600">
@@ -316,46 +386,58 @@
                             <th class="py-2 px-4 text-center w-24">操作</th>
                         </tr>
                     </thead>
-                    <tbody id="manageReqTableBody" class="text-stone-700 bg-white">
-                        <!-- Dynamic items -->
-                    </tbody>
+                    <tbody id="manageReqTableBody" class="text-stone-700 bg-white"></tbody>
                 </table>
             </div>
-            
+
             <div class="mt-6 flex justify-between items-center shrink-0">
-                <button id="resetReqBtn" class="text-sm text-stone-400 hover:text-red-500 transition-colors">🔄 恢复默认系统需求</button>
-                <button id="saveReqModalBtn" class="px-6 py-2.5 rounded-lg bg-[#5f6f52] hover:bg-[#4a5741] text-white font-medium transition-colors shadow-sm">完成配置</button>
+                <button id="resetReqBtn" class="text-sm text-stone-400 hover:text-red-500 transition-colors">🔄
+                    恢复默认系统需求</button>
+                <button id="saveReqModalBtn"
+                    class="px-6 py-2.5 rounded-lg bg-[#5f6f52] hover:bg-[#4a5741] text-white font-medium transition-colors shadow-sm">完成配置</button>
             </div>
         </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
-        <div class="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300" id="deleteModalContent">
+    <div id="deleteModal"
+        class="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl transform scale-95 transition-transform duration-300"
+            id="deleteModalContent">
             <h3 class="text-xl font-bold text-stone-800 mb-2">删除记录</h3>
             <p class="text-stone-600 text-sm mb-6">确定要删除这条看房记录吗？此操作不可恢复。</p>
             <div class="flex justify-end gap-3">
-                <button id="cancelDeleteBtn" class="px-4 py-2 rounded-lg text-stone-600 font-medium hover:bg-stone-100 transition-colors">取消</button>
-                <button id="confirmDeleteBtn" class="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors">确认删除</button>
+                <button id="cancelDeleteBtn"
+                    class="px-4 py-2 rounded-lg text-stone-600 font-medium hover:bg-stone-100 transition-colors">取消</button>
+                <button id="confirmDeleteBtn"
+                    class="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium transition-colors">确认删除</button>
             </div>
         </div>
     </div>
 
     <!-- Message Toast -->
-    <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 translate-y-20 opacity-0 z-50">
+    <div id="toast"
+        class="fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 translate-y-20 opacity-0 z-50">
         Message
     </div>
 
     <script>
-        // Data Store using localStorage
+        // --- System Configuration & Data Store ---
         const STORAGE_KEY = 'rental_assistant_records';
         const REQ_STORAGE_KEY = 'rental_assistant_requirements';
         let records = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-        
-        // Global state for editing a record
         let editingRecordId = null;
 
-        // Default Requirements Configuration
+        // --- Quantification Rules ---
+        const BASE_SCORE = 50;
+        const RENT_BASE = 4600;
+        const PRIO_RULES = {
+            'P0': { fail: -100, meet: 0, exceed: 10 },
+            'P1': { fail: -10, meet: 2, exceed: 10 },
+            'P2': { fail: 0, meet: 1, exceed: 5 },
+            'P3': { fail: 0, meet: 0.5, exceed: 2 }
+        };
+
         const defaultRequirements = [
             { id: 1, prio: "P0", dim: "🏠 房屋类型", req: "80m²+大2房/3房，光照正常" },
             { id: 2, prio: "P0", dim: "🚽 卫浴条件", req: "独立卫生间，最好干湿分离，水压正常，无漏水反味" },
@@ -379,61 +461,115 @@
             requirements = JSON.parse(JSON.stringify(defaultRequirements));
             localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
         }
-        
-        // DOM Elements
+
+        // --- DOM Elements ---
         const form = document.getElementById('houseForm');
-        const scoreRange = document.getElementById('score');
-        const scoreDisplay = document.getElementById('scoreDisplay');
+        const bonusScoreSlider = document.getElementById('bonusScore');
+        const bonusScoreDisplay = document.getElementById('bonusScoreDisplay');
         const chartCtx = document.getElementById('houseChart').getContext('2d');
-        const targetBudget = 4600;
-        const maxBudget = 5000;
         let chart = null;
 
-        // Requirement Weights for Sorting
         const prioWeights = { 'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3 };
 
-        // Initialize App
+        // --- Init ---
         function init() {
-            // Update score display on slider change
-            scoreRange.addEventListener('input', (e) => {
-                scoreDisplay.innerText = e.target.value;
+            // Event Listeners for real-time score calculation
+            document.getElementById('price').addEventListener('input', calculateLiveScore);
+            document.getElementById('commuteType').addEventListener('change', calculateLiveScore);
+            bonusScoreSlider.addEventListener('input', (e) => {
+                bonusScoreDisplay.innerText = e.target.value;
+                calculateLiveScore();
             });
 
-            // Handle form submission and cancellation
             form.addEventListener('submit', handleFormSubmit);
             document.getElementById('cancelRecordEditBtn').addEventListener('click', cancelRecordEdit);
 
-            // Setup Requirement Modals
-            setupRequirementManagement();
-
-            // Setup Data Import/Export
+            // Import / Export
             document.getElementById('exportBtn').addEventListener('click', exportData);
             document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importInput').click());
             document.getElementById('importInput').addEventListener('change', importData);
 
-            // Initial render
-            renderRequirements();
+            setupRequirementManagement();
+            renderRequirements(); // Also renders the form evaluations
             renderRecords();
             updateDashboard();
+            calculateLiveScore(); // Initial calculate
         }
 
-        // Render Requirements UI
-        function renderRequirements() {
-            // Sort requirements automatically
-            requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]);
+        // --- Core Scoring Engine ---
+        function getFormState() {
+            const price = parseInt(document.getElementById('price').value, 10) || RENT_BASE;
+            const commuteType = document.getElementById('commuteType').value;
+            const bonusScore = parseInt(document.getElementById('bonusScore').value, 10) || 0;
 
-            // Render Table Main View
-            const tbody = document.getElementById('reqTableBody');
-            tbody.innerHTML = '';
-            
-            // Render P0 Checkboxes
-            const p0Container = document.getElementById('p0CheckboxesContainer');
-            p0Container.innerHTML = '';
-            
-            let hasP0 = false;
+            const evaluations = {};
+            let hasP0Fail = false;
+            let missingP0 = []; // kept for backward compatibility
 
             requirements.forEach(req => {
-                // Table row styling
+                const radioChecked = document.querySelector(`input[name="req_${req.id}"]:checked`);
+                const val = radioChecked ? radioChecked.value : 'meet'; // default meet
+                evaluations[req.id] = val;
+
+                if (req.prio === 'P0' && val === 'fail') {
+                    hasP0Fail = true;
+                    missingP0.push(req.dim);
+                }
+            });
+
+            return { price, commuteType, bonusScore, evaluations, hasP0Fail, missingP0 };
+        }
+
+        function calculateLiveScore() {
+            const state = getFormState();
+            let score = BASE_SCORE;
+
+            // 1. Rent
+            score += Math.floor((RENT_BASE - state.price) / 50);
+
+            // 2. Commute
+            if (state.commuteType === 'convenient') score += 10;
+            else if (state.commuteType === 'inconvenient') score -= 10;
+
+            // 3. Evaluations
+            requirements.forEach(req => {
+                const evalVal = state.evaluations[req.id];
+                if (PRIO_RULES[req.prio]) {
+                    score += PRIO_RULES[req.prio][evalVal];
+                }
+            });
+
+            // 4. Bonus
+            score += state.bonusScore;
+
+            // Update UI display
+            const display = document.getElementById('liveScoreDisplay');
+            display.innerText = score;
+            if (state.hasP0Fail) {
+                display.classList.add('text-red-300');
+                display.parentElement.classList.replace('bg-[#5f6f52]', 'bg-red-800');
+            } else {
+                display.classList.remove('text-red-300');
+                display.parentElement.classList.replace('bg-red-800', 'bg-[#5f6f52]');
+            }
+
+            return score;
+        }
+
+        // --- Form Rendering (Three-state toggles) ---
+        function renderRequirements() {
+            requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]);
+
+            // Table in details
+            const tbody = document.getElementById('reqTableBody');
+            tbody.innerHTML = '';
+
+            // Evaluator Form
+            const evalContainer = document.getElementById('evaluationsContainer');
+            evalContainer.innerHTML = '';
+
+            requirements.forEach(req => {
+                // Table
                 let prioColor = 'text-stone-500';
                 if (req.prio === 'P0') prioColor = 'text-emerald-700 font-bold';
                 else if (req.prio === 'P1') prioColor = 'text-amber-700 font-bold';
@@ -448,441 +584,202 @@
                     </tr>
                 `;
 
-                // P0 Checkbox styling
-                if (req.prio === 'P0') {
-                    hasP0 = true;
-                    p0Container.innerHTML += `
-                        <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-                            <input type="checkbox" class="p0-check w-4 h-4 accent-emerald-600" data-label="${req.dim}"> 
-                            <span class="truncate" title="${req.dim}">${req.dim}</span>
-                        </label>
-                    `;
-                }
-            });
-
-            if (!hasP0) {
-                p0Container.innerHTML = '<span class="text-sm text-stone-500 col-span-2 italic">当前未设置 P0 刚需</span>';
-            }
-        }
-
-        // Setup Requirements Management Modal and Logic
-        function setupRequirementManagement() {
-            const openBtn = document.getElementById('openManageReqBtn');
-            const closeBtn = document.getElementById('closeReqModalBtn');
-            const saveBtn = document.getElementById('saveReqModalBtn');
-            const resetBtn = document.getElementById('resetReqBtn');
-            const addBtn = document.getElementById('addReqBtn');
-            const cancelEditBtn = document.getElementById('cancelEditBtn');
-            const modal = document.getElementById('reqModal');
-            const content = document.getElementById('reqModalContent');
-            
-            let editingReqId = null;
-
-            const toggleModal = (show) => {
-                if(show) {
-                    modal.classList.remove('opacity-0', 'pointer-events-none');
-                    content.classList.remove('scale-95');
-                    renderManageTable();
-                } else {
-                    modal.classList.add('opacity-0', 'pointer-events-none');
-                    content.classList.add('scale-95');
-                    resetFormState();
-                }
-            };
-
-            const resetFormState = () => {
-                editingReqId = null;
-                document.getElementById('reqFormTitle').innerText = "新增需求";
-                document.getElementById('reqFormTitle').className = "font-bold text-stone-700 mb-3 text-sm";
-                document.getElementById('addReqBtn').innerHTML = "➕ 添加";
-                cancelEditBtn.classList.add('hidden');
-                
-                document.getElementById('newReqDimName').value = '';
-                document.getElementById('newReqDesc').value = '';
-                document.getElementById('newReqPrio').value = 'P0';
-                document.getElementById('newReqIcon').value = '📌';
-            };
-
-            openBtn.addEventListener('click', () => toggleModal(true));
-            closeBtn.addEventListener('click', () => toggleModal(false));
-            saveBtn.addEventListener('click', () => toggleModal(false));
-            cancelEditBtn.addEventListener('click', resetFormState);
-
-            resetBtn.addEventListener('click', () => {
-                if(confirm('确定恢复到系统默认需求清单吗？当前的所有修改将被覆盖。')) {
-                    requirements = JSON.parse(JSON.stringify(defaultRequirements));
-                    saveRequirements();
-                    renderManageTable();
-                    renderRequirements();
-                    resetFormState();
-                    showToast("🔄 已恢复默认需求", "bg-stone-700");
-                }
-            });
-
-            addBtn.addEventListener('click', () => {
-                const prio = document.getElementById('newReqPrio').value;
-                const icon = document.getElementById('newReqIcon').value;
-                const dimName = document.getElementById('newReqDimName').value.trim();
-                const desc = document.getElementById('newReqDesc').value.trim();
-
-                if (!dimName || !desc) {
-                    showToast("⚠️ 请完整填写维度名称和具体要求", "bg-red-600");
-                    return;
-                }
-
-                // 强制加一个空格，方便后续解析图标
-                const fullDim = `${icon} ${dimName}`;
-
-                if (editingReqId) {
-                    // Update existing
-                    const reqIndex = requirements.findIndex(r => r.id === editingReqId);
-                    if (reqIndex > -1) {
-                        requirements[reqIndex].prio = prio;
-                        requirements[reqIndex].dim = fullDim;
-                        requirements[reqIndex].req = desc;
-                    }
-                    showToast("✏️ 修改成功", "bg-emerald-600");
-                } else {
-                    // Add new
-                    requirements.push({
-                        id: Date.now(),
-                        prio: prio,
-                        dim: fullDim,
-                        req: desc
-                    });
-                    showToast("➕ 添加成功", "bg-emerald-600");
-                }
-
-                saveRequirements();
-                renderManageTable();
-                renderRequirements();
-                resetFormState();
-            });
-
-            // Global edit handler
-            window.editReq = (id) => {
-                const req = requirements.find(r => r.id === id);
-                if(!req) return;
-                
-                editingReqId = id;
-                document.getElementById('reqFormTitle').innerText = "✏️ 编辑需求 (正在修改中...)";
-                document.getElementById('reqFormTitle').className = "font-bold text-blue-600 mb-3 text-sm";
-                document.getElementById('addReqBtn').innerHTML = "💾 保存修改";
-                cancelEditBtn.classList.remove('hidden');
-                
-                document.getElementById('newReqPrio').value = req.prio;
-                document.getElementById('newReqDesc').value = req.req;
-                
-                // Parse icon and name based on space separator
-                let parts = req.dim.split(' ');
-                let iconPart = '📌';
-                let namePart = req.dim;
-
-                if(parts.length > 1) {
-                    iconPart = parts[0];
-                    namePart = parts.slice(1).join(' ');
-                }
-                
-                // Ensure icon exists in dropdown, if not add it dynamically
-                let iconSelect = document.getElementById('newReqIcon');
-                let optionExists = Array.from(iconSelect.options).some(opt => opt.value === iconPart);
-                if (!optionExists && iconPart) {
-                    iconSelect.add(new Option(iconPart, iconPart));
-                }
-                
-                iconSelect.value = iconPart;
-                document.getElementById('newReqDimName').value = namePart;
-            };
-
-            // Global delete handler for requirements table
-            window.deleteReq = (id) => {
-                if(confirm('确定要删除这项需求维度吗？')) {
-                    requirements = requirements.filter(r => r.id !== id);
-                    saveRequirements();
-                    renderManageTable();
-                    renderRequirements();
-                    if(editingReqId === id) resetFormState(); // If deleting the currently edited item
-                }
-            };
-        }
-
-        function renderManageTable() {
-            requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]);
-            const tbody = document.getElementById('manageReqTableBody');
-            tbody.innerHTML = '';
-            
-            requirements.forEach(req => {
+                // Evaluator Row
                 let badgeClass = 'bg-stone-100 text-stone-600';
-                if(req.prio === 'P0') badgeClass = 'bg-[#5f6f52] text-white';
-                if(req.prio === 'P1') badgeClass = 'bg-[#a98467] text-white';
-                if(req.prio === 'P2') badgeClass = 'bg-[#adc178] text-white';
+                if (req.prio === 'P0') badgeClass = 'bg-[#5f6f52] text-white';
+                if (req.prio === 'P1') badgeClass = 'bg-[#a98467] text-white';
+                if (req.prio === 'P2') badgeClass = 'bg-[#adc178] text-white';
 
-                tbody.innerHTML += `
-                    <tr class="hover:bg-stone-50 border-b border-stone-100 last:border-0 transition-colors group">
-                        <td class="py-2 px-4">
-                            <span class="text-xs px-2 py-1 rounded font-bold ${badgeClass}">${req.prio}</span>
-                        </td>
-                        <td class="py-2 px-4 font-medium">${req.dim}</td>
-                        <td class="py-2 px-4 text-stone-500">${req.req}</td>
-                        <td class="py-2 px-4 text-center whitespace-nowrap">
-                            <button onclick="editReq(${req.id})" class="text-stone-300 hover:text-blue-500 transition-colors p-1 mr-1" title="编辑">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
-                            </button>
-                            <button onclick="deleteReq(${req.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                            </button>
-                        </td>
-                    </tr>
+                evalContainer.innerHTML += `
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-white rounded-xl border border-stone-200 gap-3">
+                        <div class="flex-grow">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${badgeClass}">${req.prio}</span>
+                                <span class="text-sm font-bold text-stone-800">${req.dim}</span>
+                            </div>
+                            <p class="text-xs text-stone-500 mt-1 pl-1 truncate max-w-[250px]" title="${req.req}">${req.req}</p>
+                        </div>
+                        <div class="flex bg-stone-100 rounded-lg p-1 gap-1 shrink-0">
+                            <label class="cursor-pointer flex-1 text-center">
+                                <input type="radio" name="req_${req.id}" value="fail" class="peer hidden eval-radio">
+                                <div class="px-3 py-1.5 text-xs font-medium rounded-md peer-checked:bg-red-500 peer-checked:text-white text-stone-500 hover:bg-stone-200 transition-colors">不符合</div>
+                            </label>
+                            <label class="cursor-pointer flex-1 text-center">
+                                <input type="radio" name="req_${req.id}" value="meet" class="peer hidden eval-radio" checked>
+                                <div class="px-3 py-1.5 text-xs font-medium rounded-md peer-checked:bg-emerald-500 peer-checked:text-white text-stone-500 hover:bg-stone-200 transition-colors">符合</div>
+                            </label>
+                            <label class="cursor-pointer flex-1 text-center">
+                                <input type="radio" name="req_${req.id}" value="exceed" class="peer hidden eval-radio">
+                                <div class="px-3 py-1.5 text-xs font-medium rounded-md peer-checked:bg-amber-500 peer-checked:text-white text-stone-500 hover:bg-stone-200 transition-colors">超预期</div>
+                            </label>
+                        </div>
+                    </div>
                 `;
             });
+
+            // Attach listeners to new radios
+            document.querySelectorAll('.eval-radio').forEach(radio => {
+                radio.addEventListener('change', calculateLiveScore);
+            });
+            calculateLiveScore();
         }
 
-        function saveRequirements() {
-            localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
+        // --- Save Logic (Strict backward compatibility) ---
+        function handleFormSubmit(e) {
+            e.preventDefault();
+
+            const state = getFormState();
+            const calculatedScore = calculateLiveScore();
+
+            const recordData = {
+                name: document.getElementById('name').value.trim(),
+                price: state.price,
+                // --- Old fields preserved ---
+                commute: parseInt(document.getElementById('commute').value, 10) || 15,
+                score: 5, // Hardcoded old fallback 
+                allP0Met: !state.hasP0Fail,
+                missingP0: state.missingP0,
+                // --- New fields ---
+                totalScore: calculatedScore,
+                commuteType: state.commuteType,
+                evaluations: state.evaluations,
+                bonusScore: state.bonusScore,
+                hasP0Fail: state.hasP0Fail,
+                notes: document.getElementById('notes').value.trim()
+            };
+
+            if (editingRecordId) {
+                const index = records.findIndex(r => r.id === editingRecordId);
+                if (index > -1) {
+                    records[index] = { ...records[index], ...recordData };
+                }
+                showToast(recordData.hasP0Fail ? "⚠️ 修改保存，因P0不符被标记淘汰" : "✅ 评价记录修改成功！", recordData.hasP0Fail ? "bg-amber-600" : "bg-emerald-600");
+            } else {
+                recordData.id = Date.now();
+                recordData.date = new Date().toLocaleDateString();
+                records.push(recordData);
+                showToast(recordData.hasP0Fail ? "⚠️ 房源已保存。由于 P0 淘汰规则未达标。" : "✅ 房源保存成功！加入量化分析。", recordData.hasP0Fail ? "bg-amber-600" : "bg-emerald-600");
+            }
+
+            saveData();
+            cancelRecordEdit();
+            renderRecords();
+            updateDashboard();
         }
 
-        // Edit Record Logic
+        // Edit Record
         window.editRecord = (id) => {
             const rec = records.find(r => r.id === id);
             if (!rec) return;
 
             editingRecordId = id;
 
-            // Populate text inputs and slider
             document.getElementById('name').value = rec.name;
             document.getElementById('price').value = rec.price;
-            document.getElementById('commute').value = rec.commute;
-            document.getElementById('score').value = rec.score;
+            document.getElementById('commute').value = rec.commute || 15;
             document.getElementById('notes').value = rec.notes || '';
-            document.getElementById('scoreDisplay').innerText = rec.score;
 
-            // Populate P0 checkboxes accurately based on saved missingP0 array
-            const p0Checks = document.querySelectorAll('.p0-check');
-            p0Checks.forEach(checkbox => {
-                const isMissing = rec.missingP0 && rec.missingP0.includes(checkbox.dataset.label);
-                checkbox.checked = !isMissing;
+            // New fields binding
+            document.getElementById('commuteType').value = rec.commuteType || 'normal';
+
+            bonusScoreSlider.value = rec.bonusScore || 0;
+            bonusScoreDisplay.innerText = rec.bonusScore || 0;
+
+            // Load evaluations or upgrade old records on the fly
+            requirements.forEach(req => {
+                let valToSet = 'meet';
+                if (rec.evaluations && rec.evaluations[req.id]) {
+                    valToSet = rec.evaluations[req.id];
+                } else {
+                    // Legacy migration logic on edit
+                    if (req.prio === 'P0' && rec.missingP0 && rec.missingP0.includes(req.dim)) {
+                        valToSet = 'fail';
+                    }
+                }
+                const radio = document.querySelector(`input[name="req_${req.id}"][value="${valToSet}"]`);
+                if (radio) radio.checked = true;
             });
 
-            // Adjust UI for editing state
             const titleEl = document.getElementById('recordFormTitle');
-            titleEl.innerHTML = '<span>✏️</span> 编辑房源评价记录';
+            titleEl.innerHTML = '<span>✏️</span> 编辑量化评估记录';
             titleEl.classList.add('text-blue-600');
-            
-            document.getElementById('submitRecordBtn').innerHTML = '💾 保存修改';
+            document.getElementById('submitRecordBtn').innerHTML = '💾 更新得分并保存';
             document.getElementById('cancelRecordEditBtn').classList.remove('hidden');
 
-            // Scroll up to the form smoothly
+            calculateLiveScore();
             titleEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         };
 
-        // Cancel Edit Logic
         function cancelRecordEdit() {
             editingRecordId = null;
             form.reset();
-            document.getElementById('scoreDisplay').innerText = "5";
-            
-            // Revert UI to default add state
+
+            bonusScoreSlider.value = 0;
+            bonusScoreDisplay.innerText = "0";
+
+            // Reset radios to default 'meet'
+            document.querySelectorAll('input.eval-radio[value="meet"]').forEach(r => r.checked = true);
+
             const titleEl = document.getElementById('recordFormTitle');
-            titleEl.innerHTML = '<span>✍️</span> 新录入房源卡片';
+            titleEl.innerHTML = '<span>✍️</span> 新录入量化评估';
             titleEl.classList.remove('text-blue-600');
-            
-            document.getElementById('submitRecordBtn').innerHTML = '💾 保存评价记录';
+            document.getElementById('submitRecordBtn').innerHTML = '💾 计算得分并保存';
             document.getElementById('cancelRecordEditBtn').classList.add('hidden');
+
+            calculateLiveScore();
         }
 
-        // Handle Form Save (Add or Update)
-        function handleFormSubmit(e) {
-            e.preventDefault();
-            
-            const p0Checks = document.querySelectorAll('.p0-check');
-            const missingP0 = [];
-            
-            p0Checks.forEach(checkbox => {
-                if (!checkbox.checked) {
-                    missingP0.push(checkbox.dataset.label);
-                }
-            });
-
-            const allP0Met = missingP0.length === 0;
-
-            const recordData = {
-                name: document.getElementById('name').value.trim(),
-                price: parseInt(document.getElementById('price').value, 10),
-                commute: parseInt(document.getElementById('commute').value, 10),
-                score: parseInt(document.getElementById('score').value, 10),
-                allP0Met: allP0Met,
-                missingP0: missingP0,
-                notes: document.getElementById('notes').value.trim()
-            };
-
-            if (editingRecordId) {
-                // Update existing record
-                const index = records.findIndex(r => r.id === editingRecordId);
-                if (index > -1) {
-                    // Keep the original id and original date
-                    records[index] = { ...records[index], ...recordData };
-                }
-                showToast(allP0Met ? "✅ 评价记录修改成功！" : "⚠️ 修改已保存，因不满足 P0 刚需已被标记为不合格。", allP0Met ? "bg-emerald-600" : "bg-amber-600");
-            } else {
-                // Create new record
-                recordData.id = Date.now();
-                recordData.date = new Date().toLocaleDateString();
-                records.push(recordData);
-                showToast(allP0Met ? "✅ 房源保存成功！加入候选列表。" : "⚠️ 房源已保存。由于不满足 P0 刚需，已被标记为不合格。", allP0Met ? "bg-emerald-600" : "bg-amber-600");
-            }
-
-            saveData();
-            cancelRecordEdit(); // resets form, clears editingRecordId, and fixes UI
-            renderRecords();
-            updateDashboard();
-        }
-
-        // Save to localStorage
-        function saveData() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-        }
-
-        // Data Export
-        function exportData() {
-            const backup = {
-                records: records,
-                requirements: requirements
-            };
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const dateStr = new Date().toISOString().slice(0, 10);
-            a.download = `house_tracker_backup_${dateStr}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast("💾 数据已成功导出！", "bg-emerald-600");
-        }
-
-        // Data Import
-        function importData(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const parsed = JSON.parse(e.target.result);
-                    
-                    if (Array.isArray(parsed)) {
-                        // 支持旧版本格式 (只包含records数组)
-                        records = parsed;
-                    } else if (parsed.records) {
-                        // 新版本格式 (包含records和requirements对象)
-                        records = parsed.records;
-                        if (parsed.requirements && Array.isArray(parsed.requirements)) {
-                            requirements = parsed.requirements;
-                            saveRequirements();
-                        }
-                    } else {
-                        throw new Error("格式无法识别");
-                    }
-                    
-                    saveData();
-                    
-                    // Trigger UI updates
-                    renderRequirements();
-                    renderManageTable();
-                    renderRecords();
-                    updateDashboard();
-                    
-                    showToast("📥 数据导入成功！", "bg-emerald-600");
-                } catch (error) {
-                    console.error("Import error:", error);
-                    showToast("⚠️ 导入失败，请检查 JSON 文件格式", "bg-red-600");
-                }
-                
-                // Clear the input value so the same file can be imported again if needed
-                event.target.value = '';
-            };
-            reader.readAsText(file);
-        }
-
-        // Render Record Cards
+        // Render Cards (Handles old and new formats)
         function renderRecords() {
             const list = document.getElementById('recordsList');
             const emptyState = document.getElementById('emptyRecords');
-            const countDisplay = document.getElementById('recordCount');
-            
+            document.getElementById('recordCount').innerText = `共 ${records.length} 套`;
             list.innerHTML = '';
-            countDisplay.innerText = `共 ${records.length} 套`;
 
             if (records.length === 0) {
-                emptyState.classList.remove('hidden');
-                return;
+                emptyState.classList.remove('hidden'); return;
             }
-            
             emptyState.classList.add('hidden');
 
-            // Sort by ID descending (newest first)
-            const sortedRecords = [...records].sort((a, b) => b.id - a.id);
-
-            sortedRecords.forEach(rec => {
+            [...records].sort((a, b) => b.id - a.id).forEach(rec => {
                 const card = document.createElement('div');
-                // Apply different styling based on P0 status
-                const borderClass = rec.allP0Met ? 'border-emerald-200 shadow-sm' : 'border-red-200 bg-[#fffcfc] opacity-80';
-                
-                let p0StatusHtml = '';
-                if (rec.allP0Met) {
-                    p0StatusHtml = `<span class="inline-block text-xs px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold mb-3 border border-emerald-200">✅ 通过所有刚需</span>`;
-                } else {
-                    p0StatusHtml = `
-                        <div class="mb-3">
-                            <span class="inline-block text-xs px-2.5 py-1 bg-red-100 text-red-800 rounded-full font-bold border border-red-200">❌ 缺失刚需</span>
-                            <p class="text-xs text-red-600 mt-1 pl-1">缺少: ${rec.missingP0.join(', ')}</p>
-                        </div>
-                    `;
-                }
+                const isFailed = rec.hasP0Fail !== undefined ? rec.hasP0Fail : !rec.allP0Met;
+                const borderClass = !isFailed ? 'border-emerald-200 shadow-sm' : 'border-red-200 bg-[#fffcfc] opacity-80';
 
-                // Price styling relative to budget
-                let priceClass = 'text-stone-700';
-                if (rec.price <= targetBudget) priceClass = 'text-emerald-600';
-                else if (rec.price > maxBudget) priceClass = 'text-red-600';
+                let p0StatusHtml = !isFailed
+                    ? `<span class="inline-block text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold border border-emerald-200">✅ P0 合格</span>`
+                    : `<span class="inline-block text-[10px] px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold border border-red-200">❌ 触碰底线淘汰</span>`;
+
+                const displayScore = rec.totalScore !== undefined ? rec.totalScore : (rec.score * 10); // Pseudo scale old score for display
 
                 card.className = `bg-white p-5 rounded-2xl border transition-all hover:shadow-md flex flex-col h-full ${borderClass}`;
-                
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-3">
                         <div class="pr-4">
                             <h3 class="font-bold text-lg text-stone-800 leading-tight">${rec.name}</h3>
                             <p class="text-[10px] text-stone-400 mt-1">${rec.date}</p>
                         </div>
-                        <div class="flex gap-1">
-                            <button onclick="editRecord(${rec.id})" class="text-stone-300 hover:text-blue-500 transition-colors p-1" title="修改记录">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg>
-                            </button>
-                            <button onclick="deleteRecord(${rec.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除记录">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
-                            </button>
+                        <div class="flex gap-1 shrink-0">
+                            <button onclick="editRecord(${rec.id})" class="text-stone-300 hover:text-blue-500 transition-colors p-1" title="修改"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/></svg></button>
+                            <button onclick="deleteRecord(${rec.id})" class="text-stone-300 hover:text-red-500 transition-colors p-1" title="删除"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
                         </div>
                     </div>
                     
-                    ${p0StatusHtml}
+                    <div class="mb-3">${p0StatusHtml}</div>
 
-                    <div class="grid grid-cols-3 gap-2 mb-4">
+                    <div class="grid grid-cols-2 gap-2 mb-4">
                         <div class="bg-stone-50 p-2 rounded-lg border border-stone-100 flex flex-col justify-center items-center">
                             <p class="text-[10px] text-stone-500 mb-0.5">月租</p>
-                            <p class="font-bold text-sm ${priceClass}">¥${rec.price}</p>
+                            <p class="font-bold text-sm text-stone-800">¥${rec.price}</p>
                         </div>
                         <div class="bg-stone-50 p-2 rounded-lg border border-stone-100 flex flex-col justify-center items-center">
-                            <p class="text-[10px] text-stone-500 mb-0.5">通勤</p>
-                            <p class="font-bold text-sm text-stone-700">${rec.commute}m</p>
-                        </div>
-                        <div class="bg-stone-50 p-2 rounded-lg border border-stone-100 flex flex-col justify-center items-center">
-                            <p class="text-[10px] text-stone-500 mb-0.5">评分</p>
-                            <p class="font-bold text-sm text-sage-700">${rec.score}</p>
+                            <p class="text-[10px] text-stone-500 mb-0.5">量化总分</p>
+                            <p class="font-bold text-sm ${isFailed ? 'text-red-500' : 'text-sage-700'}">${displayScore}</p>
                         </div>
                     </div>
                     
                     <div class="mt-auto">
-                        <p class="text-xs text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100 line-clamp-3" title="${rec.notes || '无'}">
+                        <p class="text-xs text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100 line-clamp-2" title="${rec.notes || '无'}">
                             <span class="text-stone-400 mr-1">📝</span>${rec.notes || '无备注'}
                         </p>
                     </div>
@@ -891,201 +788,206 @@
             });
         }
 
-        // Delete Logic
-        let recordToDeleteId = null;
-
-        window.deleteRecord = (id) => {
-            recordToDeleteId = id;
-            const modal = document.getElementById('deleteModal');
-            const content = document.getElementById('deleteModalContent');
-            modal.classList.remove('opacity-0', 'pointer-events-none');
-            content.classList.remove('scale-95');
-        };
-
-        document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
-            const modal = document.getElementById('deleteModal');
-            const content = document.getElementById('deleteModalContent');
-            modal.classList.add('opacity-0', 'pointer-events-none');
-            content.classList.add('scale-95');
-            recordToDeleteId = null;
-        });
-
-        document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
-            if (recordToDeleteId !== null) {
-                records = records.filter(r => r.id !== recordToDeleteId);
-                saveData();
-                renderRecords();
-                updateDashboard();
-                showToast("🗑️ 记录已删除", "bg-stone-700");
-                
-                // If the user deleted the record they are currently editing, reset the edit form
-                if (editingRecordId === recordToDeleteId) {
-                    cancelRecordEdit();
-                }
-
-                // Close modal
-                const modal = document.getElementById('deleteModal');
-                const content = document.getElementById('deleteModalContent');
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                content.classList.add('scale-95');
-                recordToDeleteId = null;
-            }
-        });
-
-        // Update Dashboard (Chart & Suggestion)
+        // Dashboard & Chart
         function updateDashboard() {
             const chartSection = document.getElementById('chartSection');
             const noData = document.getElementById('noData');
             const decisionBox = document.getElementById('decisionBox');
 
-            // Filter ONLY valid properties (All P0 met)
-            const validCandidates = records.filter(r => r.allP0Met);
+            const validCandidates = records.filter(r => r.hasP0Fail !== undefined ? !r.hasP0Fail : r.allP0Met);
 
             if (validCandidates.length === 0) {
-                chartSection.classList.add('hidden');
-                noData.classList.remove('hidden');
-                decisionBox.innerHTML = "请在左侧录入至少两套满足所有 P0 刚需的“合格房源”，系统将为您生成决策建议。";
+                chartSection.classList.add('hidden'); noData.classList.remove('hidden');
+                decisionBox.innerHTML = "请在左侧完成量化评估，录入至少两套无 P0 否决的房源。";
                 decisionBox.className = "text-sm text-stone-400 italic leading-relaxed";
                 return;
             }
 
-            chartSection.classList.remove('hidden');
-            noData.classList.add('hidden');
+            chartSection.classList.remove('hidden'); noData.classList.add('hidden');
 
-            // --- Update Chart ---
-            const labels = validCandidates.map(r => r.name.length > 10 ? r.name.substring(0, 10) + '...' : r.name);
-            const scores = validCandidates.map(r => r.score);
+            const labels = validCandidates.map(r => r.name.length > 8 ? r.name.substring(0, 8) + '...' : r.name);
+            const scores = validCandidates.map(r => r.totalScore !== undefined ? r.totalScore : (r.score * 10)); // pseudo mapping for chart
             const prices = validCandidates.map(r => r.price);
 
-            if (!chart) {
-                initChartContext(labels, scores, prices);
-            } else {
+            if (!chart) initChartContext(labels, scores, prices);
+            else {
                 chart.data.labels = labels;
                 chart.data.datasets[0].data = scores;
                 chart.data.datasets[1].data = prices;
                 chart.update();
             }
 
-            // --- Update Decision Suggestion ---
             if (validCandidates.length >= 2) {
                 decisionBox.className = "text-sm text-stone-200 leading-relaxed space-y-2";
-                
-                const bestScoreProp = [...validCandidates].sort((a, b) => b.score - a.score)[0];
+                const bestScoreProp = [...validCandidates].sort((a, b) => {
+                    const sA = a.totalScore !== undefined ? a.totalScore : a.score * 10;
+                    const sB = b.totalScore !== undefined ? b.totalScore : b.score * 10;
+                    return sB - sA;
+                })[0];
                 const cheapestProp = [...validCandidates].sort((a, b) => a.price - b.price)[0];
-                
-                let html = `<p>基于您的 P1 核心期望分析：</p><ul class="list-disc pl-4 space-y-1 mt-2">`;
-                
-                // Price analysis
-                if (cheapestProp.price <= targetBudget) {
-                    html += `<li><strong class="text-emerald-300">最符合预算</strong>: 「${cheapestProp.name}」(¥${cheapestProp.price})，在您设定的 ${targetBudget} 元目标内。</li>`;
-                } else if (cheapestProp.price <= maxBudget) {
-                    html += `<li><strong class="text-amber-300">最接近预算</strong>: 「${cheapestProp.name}」(¥${cheapestProp.price})，虽然超标但仍在 ${maxBudget} 元的可浮动上限内。</li>`;
-                } else {
-                    html += `<li><strong class="text-red-300">预算警告</strong>: 目前所有合格房源均超过 ${maxBudget} 元上限，最便宜的为「${cheapestProp.name}」(¥${cheapestProp.price})。考虑重新议价或放宽其他条件。</li>`;
-                }
 
-                // Score analysis
-                html += `<li><strong class="text-white">主观体验最佳</strong>: 「${bestScoreProp.name}」获得了最高评分 ${bestScoreProp.score}/10。</li>`;
-                
-                // Conclusion
-                if (bestScoreProp.id === cheapestProp.id && bestScoreProp.price <= maxBudget) {
-                    html += `<li class="mt-3 text-emerald-400 font-bold">🎯 终极建议: 「${bestScoreProp.name}」兼顾了最佳体验与最优价格，建议优先签约！</li>`;
-                } else if (bestScoreProp.price <= maxBudget) {
-                    html += `<li class="mt-3 text-emerald-200">💡 权衡建议: 如果愿意为好体验买单，「${bestScoreProp.name}」在预算上限内值得考虑；若更看重省钱，选「${cheapestProp.name}」。</li>`;
+                let html = `<ul class="list-disc pl-4 space-y-1">`;
+                html += `<li><strong class="text-emerald-300">量化得分王</strong>: 「${bestScoreProp.name}」 (${bestScoreProp.totalScore || bestScoreProp.score * 10}分)</li>`;
+                html += `<li><strong class="text-amber-300">价格最优选</strong>: 「${cheapestProp.name}」 (¥${cheapestProp.price})</li>`;
+
+                if (bestScoreProp.id === cheapestProp.id) {
+                    html += `<li class="mt-3 text-emerald-400 font-bold">🎯 终极判定: 「${bestScoreProp.name}」在价格和客观体验上均达成最优，建议直接签约！</li>`;
+                } else {
+                    html += `<li class="mt-3 text-stone-300">💡 权衡: 您更愿意为多出的体验分买单，还是想守住更低的月租？选择最高分或最便宜即可。</li>`;
                 }
-                
                 html += `</ul>`;
                 decisionBox.innerHTML = html;
             } else {
-                decisionBox.innerHTML = `已发现 1 套合格房源：「${validCandidates[0].name}」。再录入一套合格房源即可开启多维对比分析。`;
-                decisionBox.className = "text-sm text-stone-300 italic leading-relaxed";
+                decisionBox.innerHTML = `已收集 1 套合格数据。再录入一套即可开启量化对撞。`;
             }
         }
 
-        // Initialize Chart.js
+        // Chart.js init
         function initChartContext(labels, scores, prices) {
             chart = new Chart(chartCtx, {
                 type: 'bar',
                 data: {
                     labels: labels,
                     datasets: [
-                        { 
-                            label: '主观得分 (越大越好)', 
-                            data: scores, 
-                            backgroundColor: '#5f6f52',
-                            borderRadius: 4,
-                            yAxisID: 'y'
-                        },
-                        { 
-                            label: '月租金 (越小越好)', 
-                            data: prices, 
-                            backgroundColor: '#a98467',
-                            borderRadius: 4,
-                            yAxisID: 'y1'
-                        }
+                        { label: '量化总分 (分)', data: scores, backgroundColor: '#5f6f52', borderRadius: 4, yAxisID: 'y' },
+                        { label: '月租金 (元)', data: prices, backgroundColor: '#a98467', borderRadius: 4, yAxisID: 'y1' }
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
+                    responsive: true, maintainAspectRatio: false,
                     scales: {
-                        x: {
-                            grid: { display: false }
-                        },
-                        y: { 
-                            type: 'linear', 
-                            display: true,
-                            position: 'left', 
-                            min: 0, 
-                            max: 10,
-                            title: { display: true, text: '得分', font: {size: 10} },
-                            grid: { color: '#f5f5f4' }
-                        },
-                        y1: { 
-                            type: 'linear', 
-                            display: true,
-                            position: 'right', 
-                            title: { display: true, text: '租金 (元)', font: {size: 10} },
-                            grid: { drawOnChartArea: false } // only want the grid lines for one axis
-                        }
+                        x: { grid: { display: false } },
+                        y: { type: 'linear', position: 'left', title: { display: true, text: '得分' } },
+                        y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '租金' } }
                     },
-                    plugins: { 
-                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12, family: "'Noto Sans SC', sans-serif" } } },
-                        tooltip: {
-                            titleFont: { family: "'Noto Sans SC', sans-serif" },
-                            bodyFont: { family: "'Noto Sans SC', sans-serif" }
-                        }
-                    }
+                    plugins: { legend: { position: 'bottom', labels: { font: { family: "'Noto Sans SC', sans-serif" } } } }
                 }
             });
         }
 
-        // Simple Toast UI
-        function showToast(message, colorClass = "bg-stone-800") {
-            const toast = document.getElementById('toast');
-            toast.innerText = message;
-            // reset classes
-            toast.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 z-50 ${colorClass}`;
-            
-            // Trigger animation
-            setTimeout(() => {
-                toast.classList.remove('translate-y-20', 'opacity-0');
-                toast.classList.add('translate-y-0', 'opacity-100');
-            }, 10);
+        // Requirements Config & Modals
+        function setupRequirementManagement() {
+            document.getElementById('openManageReqBtn').addEventListener('click', () => {
+                document.getElementById('reqModal').classList.remove('opacity-0', 'pointer-events-none');
+                document.getElementById('reqModalContent').classList.remove('scale-95');
+                renderManageTable();
+            });
+            document.getElementById('closeReqModalBtn').addEventListener('click', closeReqModal);
+            document.getElementById('saveReqModalBtn').addEventListener('click', closeReqModal);
 
-            setTimeout(() => {
-                toast.classList.remove('translate-y-0', 'opacity-100');
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 3000);
+            function closeReqModal() {
+                document.getElementById('reqModal').classList.add('opacity-0', 'pointer-events-none');
+                document.getElementById('reqModalContent').classList.add('scale-95');
+            }
+
+            document.getElementById('addReqBtn').addEventListener('click', () => {
+                const prio = document.getElementById('newReqPrio').value;
+                const icon = document.getElementById('newReqIcon').value;
+                const dimName = document.getElementById('newReqDimName').value.trim();
+                const desc = document.getElementById('newReqDesc').value.trim();
+                if (!dimName || !desc) { showToast("⚠️ 请完整填写信息", "bg-red-600"); return; }
+
+                requirements.push({ id: Date.now(), prio: prio, dim: `${icon} ${dimName}`, req: desc });
+                localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
+
+                document.getElementById('newReqDimName').value = '';
+                document.getElementById('newReqDesc').value = '';
+                renderManageTable(); renderRequirements();
+                showToast("➕ 添加成功", "bg-emerald-600");
+            });
+
+            document.getElementById('resetReqBtn').addEventListener('click', () => {
+                if (confirm('恢复默认配置将覆盖您的自定义维度，继续吗？')) {
+                    requirements = JSON.parse(JSON.stringify(defaultRequirements));
+                    localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
+                    renderManageTable(); renderRequirements();
+                    showToast("🔄 已恢复默认需求", "bg-stone-700");
+                }
+            });
+
+            window.deleteReq = (id) => {
+                requirements = requirements.filter(r => r.id !== id);
+                localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
+                renderManageTable(); renderRequirements();
+            };
         }
 
-        // Run
-        document.addEventListener('DOMContentLoaded', init);
+        function renderManageTable() {
+            requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]);
+            const tbody = document.getElementById('manageReqTableBody');
+            tbody.innerHTML = '';
+            requirements.forEach(req => {
+                let badgeClass = req.prio === 'P0' ? 'bg-[#5f6f52] text-white' : req.prio === 'P1' ? 'bg-[#a98467] text-white' : req.prio === 'P2' ? 'bg-[#adc178] text-white' : 'bg-stone-100 text-stone-600';
+                tbody.innerHTML += `
+                    <tr class="border-b border-stone-100">
+                        <td class="py-2 px-4"><span class="text-xs px-2 py-1 rounded font-bold ${badgeClass}">${req.prio}</span></td>
+                        <td class="py-2 px-4 font-medium">${req.dim}</td><td class="py-2 px-4 text-stone-500">${req.req}</td>
+                        <td class="py-2 px-4 text-center"><button onclick="deleteReq(${req.id})" class="text-red-400 hover:text-red-600">删除</button></td>
+                    </tr>`;
+            });
+        }
 
+        // Delete Dialog
+        let recordToDeleteId = null;
+        window.deleteRecord = (id) => {
+            recordToDeleteId = id;
+            document.getElementById('deleteModal').classList.remove('opacity-0', 'pointer-events-none');
+            document.getElementById('deleteModalContent').classList.remove('scale-95');
+        };
+        document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteModal);
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('opacity-0', 'pointer-events-none');
+            document.getElementById('deleteModalContent').classList.add('scale-95');
+            recordToDeleteId = null;
+        }
+        document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
+            if (recordToDeleteId !== null) {
+                records = records.filter(r => r.id !== recordToDeleteId);
+                saveData(); renderRecords(); updateDashboard();
+                showToast("🗑️ 记录已删除", "bg-stone-700");
+                if (editingRecordId === recordToDeleteId) cancelRecordEdit();
+                closeDeleteModal();
+            }
+        });
+
+        // Backup
+        function exportData() {
+            const blob = new Blob([JSON.stringify({ records, requirements }, null, 2)], { type: "application/json" });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `house_tracker_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            showToast("💾 数据已导出！", "bg-emerald-600");
+        }
+
+        function importData(e) {
+            const file = e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (evt) {
+                try {
+                    const parsed = JSON.parse(evt.target.result);
+                    if (Array.isArray(parsed)) records = parsed;
+                    else if (parsed.records) {
+                        records = parsed.records;
+                        if (parsed.requirements) requirements = parsed.requirements;
+                    }
+                    saveData(); localStorage.setItem(REQ_STORAGE_KEY, JSON.stringify(requirements));
+                    renderRequirements(); renderRecords(); updateDashboard();
+                    showToast("📥 数据导入成功！", "bg-emerald-600");
+                } catch (error) { showToast("⚠️ 导入失败", "bg-red-600"); }
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function showToast(msg, bg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg; t.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-xl text-white font-medium text-sm transition-all duration-300 z-50 ${bg}`;
+            setTimeout(() => { t.classList.replace('translate-y-20', 'translate-y-0'); t.classList.replace('opacity-0', 'opacity-100'); }, 10);
+            setTimeout(() => { t.classList.replace('translate-y-0', 'translate-y-20'); t.classList.replace('opacity-100', 'opacity-0'); }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
+
 </html>
