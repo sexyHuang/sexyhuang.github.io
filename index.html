@@ -64,7 +64,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <ul class="list-disc pl-5 space-y-1">
                                 <li><strong>基础分：</strong> 50 分</li>
-                                <li><strong>租金：</strong> 以4600为准，低50元加1分，高50元扣1分</li>
+                                <li><strong>单价得分：</strong> 标准单价 59元/㎡ (基于4600元/80㎡+1.5元/㎡)，<br>用标准值减去当前房源综合单价作为得分加减</li>
                                 <li><strong>通勤：</strong> 便利(+10分)、一般(0分)、不便(-10分)</li>
                                 <li><strong>附加分：</strong> 主观微调范围 -50 ~ 50分</li>
                             </ul>
@@ -108,7 +108,7 @@
             </button>
         </div>
 
-        <!-- Analysis Dashboard (Now takes full width area) -->
+        <!-- Analysis Dashboard -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <!-- Chart Section -->
             <section class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-md border border-stone-100 flex flex-col h-full">
@@ -203,17 +203,25 @@
                             <span class="text-stone-600 text-sm font-bold">房源名称/地点</span>
                             <input type="text" id="name" required placeholder="例如：天朗明居 A座 1201" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all">
                         </label>
-                        <div class="grid grid-cols-2 gap-4">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             <label>
-                                <span class="text-stone-600 text-sm font-bold">纯房租 (元/月)</span>
+                                <span class="text-stone-600 text-sm font-bold">纯房租 (元)</span>
                                 <input type="number" id="price" required placeholder="4600" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
                             </label>
                             <label>
+                                <span class="text-stone-600 text-sm font-bold">面积 (㎡)</span>
+                                <input type="number" id="area" required value="80" placeholder="80" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
+                            </label>
+                            <label>
+                                <span class="text-stone-600 text-sm font-bold">物业费 (元/㎡)</span>
+                                <input type="number" step="0.1" id="propertyFee" required value="1.5" placeholder="1.5" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none">
+                            </label>
+                            <label>
                                 <span class="text-stone-600 text-sm font-bold">通勤便利性</span>
-                                <select id="commuteType" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-4 py-3 outline-none focus:ring-sage-500 text-sm">
-                                    <option value="convenient">🟢 便利 (近/打车易) +10分</option>
-                                    <option value="normal" selected>🟡 一般 (稍远/较易) 0分</option>
-                                    <option value="inconvenient">🔴 不便 (远/打车难) -10分</option>
+                                <select id="commuteType" class="mt-1 block w-full rounded-lg border-stone-200 bg-stone-50 px-2 sm:px-4 py-3 outline-none focus:ring-sage-500 text-sm">
+                                    <option value="convenient">🟢 便利 (+10分)</option>
+                                    <option value="normal" selected>🟡 一般 (0分)</option>
+                                    <option value="inconvenient">🔴 不便 (-10分)</option>
                                 </select>
                             </label>
                         </div>
@@ -370,7 +378,13 @@
 
         // --- Quantification Rules ---
         const BASE_SCORE = 50;
-        const RENT_BASE = 4600;
+        
+        // New Area Unit Price Rule Constants
+        const RENT_BASE_TOTAL = 4600;
+        const AREA_BASE = 80;
+        const PROP_FEE_BASE = 1.5;
+        const STD_UNIT_PRICE = (RENT_BASE_TOTAL / AREA_BASE) + PROP_FEE_BASE; // 59.0
+
         const PRIO_RULES = {
             'P0': { fail: -100, meet: 0, exceed: 10 },
             'P1': { fail: -10, meet: 2, exceed: 10 },
@@ -418,7 +432,10 @@
         function init() {
             // Event Listeners for real-time score calculation
             document.getElementById('price').addEventListener('input', calculateLiveScore);
+            document.getElementById('area').addEventListener('input', calculateLiveScore);
+            document.getElementById('propertyFee').addEventListener('input', calculateLiveScore);
             document.getElementById('commuteType').addEventListener('change', calculateLiveScore);
+            
             bonusScoreSlider.addEventListener('input', (e) => {
                 bonusScoreDisplay.innerText = e.target.value;
                 calculateLiveScore();
@@ -428,7 +445,7 @@
             form.addEventListener('submit', handleFormSubmit);
             document.getElementById('name').addEventListener('input', updateModalTitle);
             document.getElementById('openNewRecordBtn').addEventListener('click', () => {
-                cancelRecordEdit(); // resets form and state
+                cancelRecordEdit(); 
                 openRecordModal();
             });
             document.getElementById('closeRecordFormBtn').addEventListener('click', closeRecordModal);
@@ -477,19 +494,23 @@
             recordModal.classList.remove('opacity-0', 'pointer-events-none');
             recordModalContent.classList.remove('scale-95');
             updateModalTitle();
-            calculateLiveScore(); // Force recalculate upon opening
+            calculateLiveScore();
         }
 
         function closeRecordModal() {
             recordModal.classList.add('opacity-0', 'pointer-events-none');
             recordModalContent.classList.add('scale-95');
-            // Allow animation to finish before clearing state
             setTimeout(cancelRecordEdit, 300);
         }
 
         // --- Core Scoring Engine ---
         function getFormState() {
-            const price = parseInt(document.getElementById('price').value, 10) || RENT_BASE;
+            const price = parseInt(document.getElementById('price').value, 10) || RENT_BASE_TOTAL;
+            const area = parseFloat(document.getElementById('area').value) || AREA_BASE;
+            
+            let propertyFeeRaw = parseFloat(document.getElementById('propertyFee').value);
+            const propertyFee = isNaN(propertyFeeRaw) ? PROP_FEE_BASE : propertyFeeRaw;
+            
             const commuteType = document.getElementById('commuteType').value;
             const bonusScore = parseInt(document.getElementById('bonusScore').value, 10) || 0;
             
@@ -508,15 +529,17 @@
                 }
             });
 
-            return { price, commuteType, bonusScore, evaluations, hasP0Fail, missingP0 };
+            return { price, area, propertyFee, commuteType, bonusScore, evaluations, hasP0Fail, missingP0 };
         }
 
         function calculateLiveScore() {
             const state = getFormState();
             let score = BASE_SCORE;
 
-            // 1. Rent
-            score += Math.floor((RENT_BASE - state.price) / 50);
+            // 1. Unit Price Logic (标准单价 59 - 当前单价)
+            const currentUnitPrice = (state.price / state.area) + state.propertyFee;
+            const priceScore = parseFloat((STD_UNIT_PRICE - currentUnitPrice).toFixed(1));
+            score += priceScore;
 
             // 2. Commute
             if (state.commuteType === 'convenient') score += 10;
@@ -532,6 +555,9 @@
 
             // 4. Bonus
             score += state.bonusScore;
+            
+            // Format to 1 decimal place to prevent floating point long decimals
+            score = Math.round(score * 10) / 10;
 
             // Update UI display
             const display = document.getElementById('liveScoreDisplay');
@@ -551,16 +577,13 @@
         function renderRequirements() {
             requirements.sort((a, b) => prioWeights[a.prio] - prioWeights[b.prio]);
 
-            // Table in details
             const tbody = document.getElementById('reqTableBody');
             tbody.innerHTML = '';
             
-            // Evaluator Form inside Modal
             const evalContainer = document.getElementById('evaluationsContainer');
             evalContainer.innerHTML = '';
 
             requirements.forEach(req => {
-                // Table
                 let prioColor = 'text-stone-500';
                 if (req.prio === 'P0') prioColor = 'text-emerald-700 font-bold';
                 else if (req.prio === 'P1') prioColor = 'text-amber-700 font-bold';
@@ -575,7 +598,6 @@
                     </tr>
                 `;
 
-                // Evaluator Row
                 let badgeClass = 'bg-stone-100 text-stone-600';
                 if(req.prio === 'P0') badgeClass = 'bg-[#5f6f52] text-white';
                 if(req.prio === 'P1') badgeClass = 'bg-[#a98467] text-white';
@@ -608,7 +630,6 @@
                 `;
             });
 
-            // Attach listeners to new radios
             document.querySelectorAll('.eval-radio').forEach(radio => {
                 radio.addEventListener('change', calculateLiveScore);
             });
@@ -631,6 +652,8 @@
             const recordData = {
                 name: document.getElementById('name').value.trim(),
                 price: state.price,
+                area: state.area,
+                propertyFee: state.propertyFee,
                 commute: preservedCommute,
                 score: 5, 
                 allP0Met: !state.hasP0Fail,
@@ -657,7 +680,7 @@
             }
 
             saveData();
-            closeRecordModal(); // also triggers cancelRecordEdit
+            closeRecordModal();
             renderRecords();
             updateDashboard();
         }
@@ -675,8 +698,10 @@
 
             document.getElementById('name').value = rec.name;
             document.getElementById('price').value = rec.price;
-            document.getElementById('notes').value = rec.notes || '';
+            document.getElementById('area').value = rec.area || AREA_BASE;
+            document.getElementById('propertyFee').value = rec.propertyFee !== undefined ? rec.propertyFee : PROP_FEE_BASE;
             
+            document.getElementById('notes').value = rec.notes || '';
             document.getElementById('commuteType').value = rec.commuteType || 'normal';
             
             bonusScoreSlider.value = rec.bonusScore || 0;
@@ -696,21 +721,22 @@
             });
 
             document.getElementById('submitRecordBtn').innerHTML = '💾 确认修改';
-
-            openRecordModal(); // This calls updateModalTitle automatically
+            openRecordModal(); 
         };
 
         function cancelRecordEdit() {
             editingRecordId = null;
             form.reset();
             
+            document.getElementById('area').value = AREA_BASE;
+            document.getElementById('propertyFee').value = PROP_FEE_BASE;
+            
             bonusScoreSlider.value = 0;
             bonusScoreDisplay.innerText = "0";
             
             document.querySelectorAll('input.eval-radio[value="meet"]').forEach(r => r.checked = true);
 
-            document.getElementById('submitRecordBtn').innerHTML = '💾 确认保存记录';
-            
+            document.getElementById('submitRecordBtn').innerHTML = '💾 确认保存评估';
             updateModalTitle();
             calculateLiveScore();
         }
@@ -729,7 +755,10 @@
             else if (rec.commuteType === 'normal') { commuteDisplay = '一般'; commutePoints = 0; }
             else if (rec.commuteType === 'inconvenient') { commuteDisplay = '不便'; commutePoints = -10; }
 
-            const rentPoints = Math.floor((RENT_BASE - rec.price) / 50);
+            const recArea = rec.area || AREA_BASE;
+            const recPropFee = rec.propertyFee !== undefined ? rec.propertyFee : PROP_FEE_BASE;
+            const currentUnitPrice = (rec.price / recArea) + recPropFee;
+            const rentPoints = parseFloat((STD_UNIT_PRICE - currentUnitPrice).toFixed(1));
             
             let html = `
                 <div class="flex items-start justify-between">
@@ -749,8 +778,8 @@
                         <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
                             <span>初始基准分</span><span class="font-medium">+50</span>
                         </div>
-                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
-                            <span>租金分 (¥${rec.price})</span>
+                        <div class="flex justify-between border-b border-stone-200 border-dashed pb-1" title="公式: 59 - (房租/面积 + 物业费)">
+                            <span>综合单价得分 (${currentUnitPrice.toFixed(1)}元/㎡)</span>
                             <span class="font-medium ${rentPoints > 0 ? 'text-emerald-600' : (rentPoints < 0 ? 'text-red-500' : '')}">${rentPoints > 0 ? '+' : ''}${rentPoints}</span>
                         </div>
                         <div class="flex justify-between border-b border-stone-200 border-dashed pb-1">
@@ -764,8 +793,23 @@
                     </div>
                 </div>
 
+                <div class="grid grid-cols-3 gap-2 mt-4 mb-2">
+                    <div class="bg-white p-2 rounded-lg border border-stone-100 flex flex-col items-center">
+                        <p class="text-[10px] text-stone-500">纯房租</p>
+                        <p class="font-bold text-sm text-stone-800">¥${rec.price}</p>
+                    </div>
+                    <div class="bg-white p-2 rounded-lg border border-stone-100 flex flex-col items-center">
+                        <p class="text-[10px] text-stone-500">面积</p>
+                        <p class="font-bold text-sm text-stone-800">${recArea}㎡</p>
+                    </div>
+                    <div class="bg-white p-2 rounded-lg border border-stone-100 flex flex-col items-center">
+                        <p class="text-[10px] text-stone-500">物业费</p>
+                        <p class="font-bold text-sm text-stone-800">${recPropFee}元/㎡</p>
+                    </div>
+                </div>
+
                 <div>
-                    <h5 class="font-bold text-sm text-stone-700 mb-3 flex items-center gap-2"><span>📋</span> 维度核算详情</h5>
+                    <h5 class="font-bold text-sm text-stone-700 mb-3 flex items-center gap-2 mt-4"><span>📋</span> 维度核算详情</h5>
                     <div class="space-y-2">
             `;
 
@@ -879,8 +923,8 @@
 
                     <div class="grid grid-cols-3 gap-2 mb-4">
                         <div class="bg-stone-50 p-2 rounded-lg border border-stone-100 flex flex-col justify-center items-center">
-                            <p class="text-[10px] text-stone-500 mb-0.5">月租</p>
-                            <p class="font-bold text-sm text-stone-800">¥${rec.price}</p>
+                            <p class="text-[10px] text-stone-500 mb-0.5">月租 / 面积</p>
+                            <p class="font-bold text-sm text-stone-800">¥${rec.price}<span class="text-[10px] text-stone-500 font-normal"> / ${rec.area || AREA_BASE}㎡</span></p>
                         </div>
                         <div class="bg-stone-50 p-2 rounded-lg border border-stone-100 flex flex-col justify-center items-center text-center">
                             <p class="text-[10px] text-stone-500 mb-0.5">通勤</p>
@@ -942,12 +986,12 @@
                 
                 let html = `<ul class="list-disc pl-4 space-y-1">`;
                 html += `<li><strong class="text-emerald-300">量化得分王</strong>: 「${bestScoreProp.name}」 (${bestScoreProp.totalScore || bestScoreProp.score * 10}分)</li>`;
-                html += `<li><strong class="text-amber-300">价格最优选</strong>: 「${cheapestProp.name}」 (¥${cheapestProp.price})</li>`;
+                html += `<li><strong class="text-amber-300">绝对低价选</strong>: 「${cheapestProp.name}」 (¥${cheapestProp.price})</li>`;
                 
                 if (bestScoreProp.id === cheapestProp.id) {
-                    html += `<li class="mt-3 text-emerald-400 font-bold">🎯 终极判定: 「${bestScoreProp.name}」在价格和客观体验上均达成最优，建议直接签约！</li>`;
+                    html += `<li class="mt-3 text-emerald-400 font-bold">🎯 终极判定: 「${bestScoreProp.name}」在单位价格性价比和客观体验上均达成最优，建议直接签约！</li>`;
                 } else {
-                    html += `<li class="mt-3 text-stone-300">💡 权衡: 您更愿意为多出的体验分买单，还是想守住更低的月租？</li>`;
+                    html += `<li class="mt-3 text-stone-300">💡 权衡: 您更愿意为多出的体验分买单，还是想守住绝对低价的月租？</li>`;
                 }
                 html += `</ul>`;
                 decisionBox.innerHTML = html;
@@ -963,7 +1007,7 @@
                     labels: labels,
                     datasets: [
                         { label: '量化总分 (分)', data: scores, backgroundColor: '#5f6f52', borderRadius: 4, yAxisID: 'y' },
-                        { label: '月租金 (元)', data: prices, backgroundColor: '#a98467', borderRadius: 4, yAxisID: 'y1' }
+                        { label: '总租金 (元)', data: prices, backgroundColor: '#a98467', borderRadius: 4, yAxisID: 'y1' }
                     ]
                 },
                 options: {
